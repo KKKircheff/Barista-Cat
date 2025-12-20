@@ -4,6 +4,7 @@ import { createAudioPlayer } from '@/lib/audio/playback';
 interface UseAudioPlaybackReturn {
   play: (base64Audio: string) => Promise<void>;
   stop: () => void;
+  initialize: () => Promise<void>;
   isPlayingAudio: boolean; // Renamed from isPlaying for clarity
 }
 
@@ -53,9 +54,24 @@ export function useAudioPlayback(sampleRate: number = 24000): UseAudioPlaybackRe
     }
   };
 
+  const initialize = async (): Promise<void> => {
+    if (!audioPlayerRef.current) {
+      throw new Error('Audio player not initialized');
+    }
+
+    try {
+      // Initialize AudioContext with user gesture (required by browsers)
+      audioPlayerRef.current.initialize();
+    } catch (error) {
+      console.error('[useAudioPlayback] Initialization error:', error);
+      throw error;
+    }
+  };
+
   return {
     play,
     stop,
+    initialize,
     isPlayingAudio,
   };
 }

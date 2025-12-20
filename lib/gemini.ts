@@ -2,9 +2,7 @@ import {GoogleGenAI, Modality} from '@google/genai';
 import type {LiveServerMessage} from '@google/genai';
 import type {SessionConfig} from './types';
 
-// Model names
 export const GEMINI_MODELS = {
-    LIVE_FLASH: 'gemini-live-2.5-flash-preview',
     LIVE_FLASH_NATIVE: 'gemini-2.5-flash-native-audio-preview-12-2025',
 } as const;
 
@@ -80,14 +78,6 @@ export function sendAudioChunk(session: any, base64Audio: string): void {
     }
 }
 
-/**
- * Parse server message and extract relevant data
- *
- * Note: The Gemini SDK may log warnings about "non-text parts inlineData"
- * or "non-data parts text,thought" when responses contain mixed content types
- * (text + audio + thought). These are informational and expected when using
- * AUDIO response modality. The warnings are suppressed in VoiceChat.tsx.
- */
 export function parseLiveServerMessage(message: any): {
     text?: string;
     audioData?: string;
@@ -111,17 +101,14 @@ export function parseLiveServerMessage(message: any): {
         functionCall: undefined as any,
     };
 
-    // Check for setup complete (initial handshake)
     if (message.setupComplete) {
         return result;
     }
 
-    // Check for turn complete
     if (message.serverContent?.turnComplete) {
         result.turnComplete = true;
     }
 
-    // Check for function calls in toolCall.functionCalls (primary location)
     if (message.toolCall?.functionCalls) {
         for (const funcCall of message.toolCall.functionCalls) {
             if (['show_menu', 'hide_menu', 'close_session'].includes(funcCall.name)) {
@@ -135,13 +122,9 @@ export function parseLiveServerMessage(message: any): {
         }
     }
 
-    // Also check for function calls in serverContent.modelTurn.parts (alternative location)
     if (!result.functionCall && message.serverContent?.modelTurn?.parts) {
         for (const part of message.serverContent.modelTurn.parts) {
-            if (
-                part.functionCall &&
-                ['show_menu', 'hide_menu', 'close_session'].includes(part.functionCall.name)
-            ) {
+            if (part.functionCall && ['show_menu', 'hide_menu', 'close_session'].includes(part.functionCall.name)) {
                 result.functionCall = {
                     id: part.functionCall.id,
                     name: part.functionCall.name,
@@ -152,7 +135,6 @@ export function parseLiveServerMessage(message: any): {
         }
     }
 
-    // Extract text content - try multiple paths
     if (message.text) {
         result.text = message.text;
     } else if (message.serverContent?.modelTurn?.parts) {
@@ -164,7 +146,6 @@ export function parseLiveServerMessage(message: any): {
         }
     }
 
-    // Extract audio data - try multiple paths
     if (message.data) {
         result.audioData = message.data;
     } else if (message.serverContent?.modelTurn?.parts) {
@@ -176,8 +157,6 @@ export function parseLiveServerMessage(message: any): {
         }
     }
 
-    // Extract usage metadata - check multiple paths
-    // Note: Gemini Live API may not consistently provide usage metadata
     if (message.usageMetadata) {
         result.usageMetadata = {
             promptTokenCount: message.usageMetadata.promptTokenCount,

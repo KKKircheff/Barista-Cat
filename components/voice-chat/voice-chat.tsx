@@ -1,28 +1,33 @@
 'use client';
 
-import {useEffect, useState} from 'react';
-import {useGeminiSession} from '@/hooks/use-gemini-session';
-import {useAudioCapture} from '@/hooks/use-audio-capture';
-import {useAudioPlayback} from '@/hooks/use-audio-playback';
-import {useVolumeLevel} from '@/hooks/use-volume-level';
+import { useEffect, useState } from 'react';
+import { useGeminiSession } from '@/hooks/use-gemini-session';
+import { useAudioCapture } from '@/hooks/use-audio-capture';
+import { useAudioPlayback } from '@/hooks/use-audio-playback';
+import { useVolumeLevel } from '@/hooks/use-volume-level';
 
-import {GradientButton} from '@/components/shared/gradient-button';
-import {Spinner} from '@/components/ui/spinner';
-import {BaristaImage} from './barista-image';
-import {VolumeBar} from './volume-bar';
-import {ErrorAlert} from './error-alert';
-import {MenuCard} from './menu-card';
-import {TokenUsageDisplay} from './token-usage-display';
+import { GradientButton } from '@/components/shared/gradient-button';
+import { Spinner } from '@/components/ui/spinner';
+import { BaristaImage } from './barista-image';
+import { VolumeBar } from './volume-bar';
+import { ErrorAlert } from './error-alert';
+import { MenuCard } from './menu-card';
+import { TokenUsageDisplay } from './token-usage-display';
 
 /**
  * Main VoiceChat orchestrator component.
  * Coordinates all custom hooks and child components for the voice chat experience.
  *
- * One-button flow: "Go to bar" → loading → mic auto-starts → ready to talk!
+ * Auto-connect flow:
+ * 1. Page loads → "Preparing session..." (auto-connect WebSocket + AudioContext + mic)
+ * 2. Everything initialized → Bartender starts greeting
+ * 3. User has time to respond before bartender finishes talking
  */
 export function VoiceChat() {
     const [showMenu, setShowMenu] = useState(false);
-    const [isConnecting, setIsConnecting] = useState(false); // Loading state during connection
+    const [isInitializing, setIsInitializing] = useState(true); // Start in initializing state
+    const [sessionEnded, setSessionEnded] = useState(false); // Track if session has ended
+    const [isClosing, setIsClosing] = useState(false); // Track if session is closing
 
     // Custom hooks manage all business logic
     const audioPlayback = useAudioPlayback(24000);
@@ -37,34 +42,63 @@ export function VoiceChat() {
                     console.error('[VoiceChat] Audio playback error:', err);
                 });
             }
-
-            // FALLBACK: Detect goodbye in text if function wasn't called
-            if (message.text && message.turnComplete) {
-                const text = message.text.toLowerCase();
-                const goodbyeKeywords = ['goodbye', 'bye', 'see you', 'session closed', 'take care', 'later'];
-                const containsGoodbye = goodbyeKeywords.some(keyword => text.includes(keyword));
-
-                if (containsGoodbye) {
-                    setTimeout(() => {
-                        handleDisconnect();
-                    }, 2000); // Give audio time to finish
-                }
-            }
         },
         onFunctionCall: (functionName, args) => {
+            console.log('[VoiceChat] Function called:', functionName);
             if (functionName === 'show_menu') {
                 setShowMenu(true);
             } else if (functionName === 'hide_menu') {
                 setShowMenu(false);
             } else if (functionName === 'close_session') {
-                // Close after a short delay to let current audio finish
+                // Mark as closing and hide menu
+                console.warn('[VoiceChat] close_session called - this should only happen on goodbye!');
+                setIsClosing(true);
                 setShowMenu(false);
+
+                // Wait 6 seconds for bartender to finish farewell audio
                 setTimeout(() => {
                     handleDisconnect();
-                }, 2000);
+                }, 6000);
             }
         },
     });
+
+    // Auto-initialize everything on page load (or when user clicks "Go to bar" after session ends)
+    useEffect(() => {
+        const autoInitialize = async () => {
+            if (!geminiSession.isConnected && isInitializing && !sessionEnded) {
+                try {
+                    console.log('[VoiceChat] Auto-initializing on page load...');
+                    const startTime = performance.now();
+
+                    // Step 1: Connect to Gemini (skip greeting for now)
+                    await geminiSession.connect(true); // skipGreeting = true
+                    console.log('[VoiceChat] ✓ Gemini session connected');
+
+                    // Step 2: Initialize AudioContext
+                    await audioPlayback.initialize();
+                    console.log('[VoiceChat] ✓ AudioContext initialized');
+
+                    // Step 3: Start microphone recording
+                    await audioCapture.startRecording(geminiSession.sendAudio);
+                    console.log('[VoiceChat] ✓ Microphone started');
+
+                    // Step 4: Send greeting to trigger bartender
+                    geminiSession.sendGreeting();
+                    console.log('[VoiceChat] ✓ Greeting sent');
+
+                    const elapsed = performance.now() - startTime;
+                    console.log(`[VoiceChat] Full initialization complete in ${elapsed.toFixed(0)}ms`);
+                    setIsInitializing(false);
+                } catch (error) {
+                    console.error('[VoiceChat] Auto-initialize failed:', error);
+                    setIsInitializing(false);
+                }
+            }
+        };
+
+        autoInitialize();
+    }, [geminiSession.isConnected, isInitializing, sessionEnded]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -75,34 +109,49 @@ export function VoiceChat() {
         };
     }, []);
 
-    // "Go to bar" - creates session and auto-starts mic
-    const handleGoToBar = async () => {
-        try {
-            setIsConnecting(true);
-
-            // Connect to Gemini (triggers greeting)
-            await geminiSession.connect();
-
-            // Wait a moment for WebSocket to stabilize
-            await new Promise((resolve) => setTimeout(resolve, 200));
-
-            // Auto-start microphone recording
-            await audioCapture.startRecording(geminiSession.sendAudio);
-
-            setIsConnecting(false);
-        } catch (error) {
-            console.error('[VoiceChat] Failed to initialize:', error);
-            setIsConnecting(false);
-        }
-    };
-
     // Disconnect and cleanup all resources
     const handleDisconnect = () => {
         audioCapture.stopRecording();
         audioPlayback.stop();
         geminiSession.disconnect();
         setShowMenu(false);
-        setIsConnecting(false);
+        setIsClosing(false);
+        setSessionEnded(true); // Mark session as ended to show "Go to bar" button
+    };
+
+    // Start a new session when user clicks "Go to bar" button
+    const handleGoToBar = async () => {
+        try {
+            console.log('[VoiceChat] Starting new session...');
+            setSessionEnded(false);
+            setIsClosing(false);
+            setIsInitializing(true);
+            const startTime = performance.now();
+
+            // Step 1: Connect to Gemini (skip greeting for now)
+            await geminiSession.connect(true); // skipGreeting = true
+            console.log('[VoiceChat] ✓ Gemini session connected');
+
+            // Step 2: Initialize AudioContext
+            await audioPlayback.initialize();
+            console.log('[VoiceChat] ✓ AudioContext initialized');
+
+            // Step 3: Start microphone recording
+            await audioCapture.startRecording(geminiSession.sendAudio);
+            console.log('[VoiceChat] ✓ Microphone started');
+
+            // Step 4: Send greeting to trigger bartender
+            geminiSession.sendGreeting();
+            console.log('[VoiceChat] ✓ Greeting sent');
+
+            const elapsed = performance.now() - startTime;
+            console.log(`[VoiceChat] New session started in ${elapsed.toFixed(0)}ms`);
+            setIsInitializing(false);
+        } catch (error) {
+            console.error('[VoiceChat] Failed to start new session:', error);
+            setIsInitializing(false);
+            setSessionEnded(true);
+        }
     };
 
     // Combine errors from both session and capture
@@ -116,8 +165,18 @@ export function VoiceChat() {
             {/* Menu card - shown when user asks for drinks */}
             {showMenu && <MenuCard onClose={() => setShowMenu(false)} />}
 
-            {/* "Go to bar" button - shown when disconnected */}
-            {!geminiSession.isConnected && !audioCapture.isRecording && !isConnecting && (
+            {/* Loading state while auto-initializing on page load */}
+            {isInitializing && (
+                <div className="flex justify-center pt-4">
+                    <GradientButton variant="purple-pink" disabled>
+                        <Spinner />
+                        Preparing session...
+                    </GradientButton>
+                </div>
+            )}
+
+            {/* "Go to bar" button - shown after session ends */}
+            {sessionEnded && !isInitializing && (
                 <div className="flex justify-center pt-4">
                     <GradientButton variant="purple-pink" onClick={handleGoToBar}>
                         Go to bar
@@ -125,21 +184,20 @@ export function VoiceChat() {
                 </div>
             )}
 
-            {/* Loading state while connecting */}
-            {isConnecting && (
+            {/* "Finish your order" button - shown when recording */}
+            {!isInitializing && !sessionEnded && !isClosing && audioCapture.isRecording && (
                 <div className="flex justify-center pt-4">
-                    <GradientButton variant="purple-pink" disabled>
-                        <Spinner />
-                        Entering the bar...
+                    <GradientButton variant="ghost" onClick={handleDisconnect}>
+                        Finish your order
                     </GradientButton>
                 </div>
             )}
 
-            {/* "Finish your order" button - shown when recording */}
-            {audioCapture.isRecording && (
+            {/* "Saying goodbye..." indicator - shown when session is closing */}
+            {isClosing && (
                 <div className="flex justify-center pt-4">
-                    <GradientButton variant="ghost" onClick={handleDisconnect}>
-                        Finish your order
+                    <GradientButton variant="ghost" disabled>
+                        Saying goodbye...
                     </GradientButton>
                 </div>
             )}

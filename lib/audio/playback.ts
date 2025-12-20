@@ -289,6 +289,7 @@ export function createAudioPlayer(sampleRate: number = 24000) {
         stop,
         setVolume,
         cleanup,
+        initialize: init, // NEW: Expose init to trigger AudioContext creation with user gesture
         isPlaying: () => isPlaying,
         setOnPlaybackStateChange, // NEW
     };

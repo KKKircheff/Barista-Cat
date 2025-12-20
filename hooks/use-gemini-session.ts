@@ -1,5 +1,5 @@
 import {useState, useRef, useCallback} from 'react';
-import {GoogleGenAI, Modality} from '@google/genai';
+import {GoogleGenAI} from '@google/genai';
 import type {LiveServerMessage} from '@google/genai';
 import {GEMINI_MODELS} from '@/lib/gemini';
 import {parseLiveServerMessage} from '@/lib/gemini';
@@ -13,22 +13,14 @@ interface UseGeminiSessionOptions {
 
 interface UseGeminiSessionReturn {
     isConnected: boolean;
-    connect: () => Promise<void>;
+    connect: (skipGreeting?: boolean) => Promise<void>;
     disconnect: () => void;
     sendAudio: (base64Audio: string) => void;
+    sendGreeting: () => void;
     error: string | null;
     tokenUsage: TokenUsage | null;
 }
 
-/**
- * Custom hook for managing Gemini Live API session via direct WebSocket.
- *
- * Security: API key is fetched from backend endpoint and used for direct connection.
- * Uses direct WebSocket connection to Gemini Live API for minimal latency.
- *
- * @param options - Callbacks and configuration for the session
- * @returns Session controls, connection status, and error state
- */
 export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSessionReturn {
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -47,20 +39,17 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                     if (!prev) return parsed.usageMetadata!;
 
                     return {
-                        promptTokenCount:
-                            (prev.promptTokenCount || 0) + (parsed.usageMetadata!.promptTokenCount || 0),
+                        promptTokenCount: (prev.promptTokenCount || 0) + (parsed.usageMetadata!.promptTokenCount || 0),
                         candidatesTokenCount:
-                            (prev.candidatesTokenCount || 0) +
-                            (parsed.usageMetadata!.candidatesTokenCount || 0),
-                        totalTokenCount:
-                            (prev.totalTokenCount || 0) + (parsed.usageMetadata!.totalTokenCount || 0),
+                            (prev.candidatesTokenCount || 0) + (parsed.usageMetadata!.candidatesTokenCount || 0),
+                        totalTokenCount: (prev.totalTokenCount || 0) + (parsed.usageMetadata!.totalTokenCount || 0),
                     };
                 });
             }
 
             // Handle function calls
             if (parsed.functionCall) {
-                handleFunctionCall(parsed.functionCall);  // Pass entire object with id
+                handleFunctionCall(parsed.functionCall); // Pass entire object with id
             }
 
             // Call user-provided onMessage callback
@@ -72,7 +61,7 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
     );
 
     const handleFunctionCall = useCallback(
-        (functionCall: {id: string, name: string, args?: any}) => {
+        (functionCall: {id: string; name: string; args?: any}) => {
             // Notify parent component
             if (options?.onFunctionCall) {
                 options.onFunctionCall(functionCall.name, functionCall.args);
@@ -83,7 +72,7 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                 sessionRef.current.sendToolResponse({
                     functionResponses: [
                         {
-                            id: functionCall.id,  // MUST include ID to match the call
+                            id: functionCall.id, // MUST include ID to match the call
                             name: functionCall.name,
                             response: {
                                 success: true,
@@ -97,11 +86,11 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
         [options]
     );
 
-    const connect = async (): Promise<void> => {
+    const connect = async (skipGreeting: boolean = false): Promise<void> => {
         setError(null);
 
         try {
-            // Step 1: Get API key from backend
+            // Step 1: Get ephemeral token from backend
             const tokenResponse = await fetch('/api/gemini/token', {method: 'POST'});
 
             if (!tokenResponse.ok) {
@@ -110,45 +99,22 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
 
             const {token} = await tokenResponse.json();
 
-            // Step 2: Initialize SDK with API key
-            const ai = new GoogleGenAI({apiKey: token});
+            // Step 2: Initialize SDK with ephemeral token
+            const ai = new GoogleGenAI({
+                apiKey: token,
+                httpOptions: {
+                    apiVersion: 'v1alpha',
+                },
+            });
 
-            // Step 3: Connect to Gemini Live WebSocket directly
+            console.log('[useGeminiSession] Connecting to Gemini Live with ephemeral token...');
+
+            // Step 3: Connect with MINIMAL config (everything is in the token)
             const session = await ai.live.connect({
                 model: GEMINI_MODELS.LIVE_FLASH_NATIVE,
-                config: {
-                    responseModalities: [Modality.AUDIO],
-                    systemInstruction: {
-                        parts: [{
-                            text: 'You are "Whiskerjack", a post-apocalyptic barista cat. Be sarcastic but charming. Keep responses under 20 words. When conversation starts with empty input, greet with max 10 words like: "What\'s it gonna be?" or "Yeah, we\'re open. Barely."\n\nIMPORTANT: You have access to tools (show_menu, hide_menu, close_session). You MUST use these tools when appropriate. When the user says goodbye or wants to leave, call the close_session function immediately before saying farewell.'
-                        }]
-                    },
-                    speechConfig: {
-                        voiceConfig: {
-                            prebuiltVoiceConfig: {
-                                voiceName: 'Iapetus'
-                            }
-                        }
-                    },
-                    tools: [{
-                        functionDeclarations: [
-                            {
-                                name: 'show_menu',
-                                description: 'Show the cocktails and drinks menu to the user. Call this when user asks about drinks, menu, cocktails, or what beverages are available.'
-                            },
-                            {
-                                name: 'hide_menu',
-                                description: 'Hide the cocktails menu from view. Call this when user is done looking at the menu or conversation moves on.'
-                            },
-                            {
-                                name: 'close_session',
-                                description: 'REQUIRED: Call this function immediately when the user says goodbye, bye, see you later, I\'m done, or wants to leave. You MUST call this function before saying your farewell message. Do not just say goodbye - actually call this function.'
-                            }
-                        ]
-                    }]
-                },
                 callbacks: {
                     onopen: () => {
+                        console.log('[useGeminiSession] Connected');
                         setIsConnected(true);
                     },
                     onmessage: (msg: LiveServerMessage) => {
@@ -164,6 +130,11 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                         }
                     },
                     onclose: (event: any) => {
+                        console.error('[useGeminiSession] WebSocket closed:', {
+                            code: event.code,
+                            reason: event.reason,
+                            wasClean: event.wasClean,
+                        });
                         setIsConnected(false);
                     },
                 },
@@ -171,15 +142,13 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
 
             sessionRef.current = session;
 
-            // Send initial greeting trigger (empty message) after session is established
-            session.sendClientContent({
-                turns: [
-                    {
-                        role: 'user',
-                        parts: [{text: ''}],
-                    },
-                ],
-            });
+            // Send initial greeting trigger (text-based with turnComplete)
+            if (!skipGreeting) {
+                session.sendClientContent({
+                    turns: [{role: 'user', parts: [{text: ''}]}],
+                    turnComplete: true,
+                });
+            }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to connect';
             console.error('[useGeminiSession] Connect error:', err);
@@ -218,11 +187,24 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
         });
     };
 
+    const sendGreeting = (): void => {
+        if (!sessionRef.current) {
+            return;
+        }
+
+        // Trigger bartender greeting with empty text + turnComplete
+        sessionRef.current.sendClientContent({
+            turns: [{role: 'user', parts: [{text: ''}]}],
+            turnComplete: true,
+        });
+    };
+
     return {
         isConnected,
         connect,
         disconnect,
         sendAudio,
+        sendGreeting,
         error,
         tokenUsage,
     };
