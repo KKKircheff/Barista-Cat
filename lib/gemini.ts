@@ -88,7 +88,69 @@ export function sendAudioChunk(session: any, base64Audio: string): void {
  * (text + audio + thought). These are informational and expected when using
  * AUDIO response modality. The warnings are suppressed in VoiceChat.tsx.
  */
-export function parseLiveServerMessage(message: any): {    text?: string;    audioData?: string;    turnComplete: boolean;    usageMetadata?: {        promptTokenCount?: number;        candidatesTokenCount?: number;        totalTokenCount?: number;    };    functionCall?: {        name: 'show_menu' | 'hide_menu' | 'close_session';        args?: any;    };} {    const result = {        text: undefined as string | undefined,        audioData: undefined as string | undefined,        turnComplete: false,        usageMetadata: undefined as any,        functionCall: undefined as any,    };    // Check for setup complete (initial handshake)    if (message.setupComplete) {        return result;    }    // Check for turn complete    if (message.serverContent?.turnComplete) {        result.turnComplete = true;    }    // Check for function calls in toolCall.functionCalls (primary location)    if (message.toolCall?.functionCalls) {        for (const funcCall of message.toolCall.functionCalls) {            if (['show_menu', 'hide_menu', 'close_session'].includes(funcCall.name)) {                result.functionCall = {                    name: funcCall.name,                    args: funcCall.args,                };                break; // Only process first function call            }        }    }    // Also check for function calls in serverContent.modelTurn.parts (alternative location)    if (!result.functionCall && message.serverContent?.modelTurn?.parts) {        for (const part of message.serverContent.modelTurn.parts) {            if (                part.functionCall &&                ['show_menu', 'hide_menu', 'close_session'].includes(part.functionCall.name)            ) {                result.functionCall = {                    name: part.functionCall.name,                    args: part.functionCall.args,                };                break;            }        }    }
+export function parseLiveServerMessage(message: any): {
+    text?: string;
+    audioData?: string;
+    turnComplete: boolean;
+    usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
+    };
+    functionCall?: {
+        id: string;
+        name: 'show_menu' | 'hide_menu' | 'close_session';
+        args?: any;
+    };
+} {
+    const result = {
+        text: undefined as string | undefined,
+        audioData: undefined as string | undefined,
+        turnComplete: false,
+        usageMetadata: undefined as any,
+        functionCall: undefined as any,
+    };
+
+    // Check for setup complete (initial handshake)
+    if (message.setupComplete) {
+        return result;
+    }
+
+    // Check for turn complete
+    if (message.serverContent?.turnComplete) {
+        result.turnComplete = true;
+    }
+
+    // Check for function calls in toolCall.functionCalls (primary location)
+    if (message.toolCall?.functionCalls) {
+        for (const funcCall of message.toolCall.functionCalls) {
+            if (['show_menu', 'hide_menu', 'close_session'].includes(funcCall.name)) {
+                result.functionCall = {
+                    id: funcCall.id,
+                    name: funcCall.name,
+                    args: funcCall.args,
+                };
+                break; // Only process first function call
+            }
+        }
+    }
+
+    // Also check for function calls in serverContent.modelTurn.parts (alternative location)
+    if (!result.functionCall && message.serverContent?.modelTurn?.parts) {
+        for (const part of message.serverContent.modelTurn.parts) {
+            if (
+                part.functionCall &&
+                ['show_menu', 'hide_menu', 'close_session'].includes(part.functionCall.name)
+            ) {
+                result.functionCall = {
+                    id: part.functionCall.id,
+                    name: part.functionCall.name,
+                    args: part.functionCall.args,
+                };
+                break;
+            }
+        }
+    }
 
     // Extract text content - try multiple paths
     if (message.text) {

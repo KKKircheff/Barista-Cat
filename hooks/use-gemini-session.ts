@@ -60,7 +60,7 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
 
             // Handle function calls
             if (parsed.functionCall) {
-                handleFunctionCall(parsed.functionCall.name, parsed.functionCall.args);
+                handleFunctionCall(parsed.functionCall);  // Pass entire object with id
             }
 
             // Call user-provided onMessage callback
@@ -72,23 +72,22 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
     );
 
     const handleFunctionCall = useCallback(
-        (functionName: string, args?: any) => {
-            console.log('[useGeminiSession] Function call:', functionName, args);
-
+        (functionCall: {id: string, name: string, args?: any}) => {
             // Notify parent component
             if (options?.onFunctionCall) {
-                options.onFunctionCall(functionName, args);
+                options.onFunctionCall(functionCall.name, functionCall.args);
             }
 
-            // Send function response back to Gemini
+            // Send function response with matching ID (CRITICAL!)
             if (sessionRef.current) {
                 sessionRef.current.sendToolResponse({
                     functionResponses: [
                         {
-                            name: functionName,
+                            id: functionCall.id,  // MUST include ID to match the call
+                            name: functionCall.name,
                             response: {
                                 success: true,
-                                message: `Function ${functionName} executed`,
+                                message: `Function ${functionCall.name} executed`,
                             },
                         },
                     ],
@@ -103,7 +102,6 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
 
         try {
             // Step 1: Get API key from backend
-            console.log('[useGeminiSession] Requesting API key...');
             const tokenResponse = await fetch('/api/gemini/token', {method: 'POST'});
 
             if (!tokenResponse.ok) {
@@ -111,20 +109,18 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
             }
 
             const {token} = await tokenResponse.json();
-            console.log('[useGeminiSession] API key received');
 
             // Step 2: Initialize SDK with API key
             const ai = new GoogleGenAI({apiKey: token});
 
             // Step 3: Connect to Gemini Live WebSocket directly
-            console.log('[useGeminiSession] Connecting to Gemini Live API...');
             const session = await ai.live.connect({
                 model: GEMINI_MODELS.LIVE_FLASH_NATIVE,
                 config: {
                     responseModalities: [Modality.AUDIO],
                     systemInstruction: {
                         parts: [{
-                            text: 'You are "Whiskerjack", a post-apocalyptic barista cat. Be sarcastic but charming. Keep responses under 20 words. When conversation starts with empty input, greet with max 10 words like: "What\'s it gonna be?" or "Yeah, we\'re open. Barely."'
+                            text: 'You are "Whiskerjack", a post-apocalyptic barista cat. Be sarcastic but charming. Keep responses under 20 words. When conversation starts with empty input, greet with max 10 words like: "What\'s it gonna be?" or "Yeah, we\'re open. Barely."\n\nIMPORTANT: You have access to tools (show_menu, hide_menu, close_session). You MUST use these tools when appropriate. When the user says goodbye or wants to leave, call the close_session function immediately before saying farewell.'
                         }]
                     },
                     speechConfig: {
@@ -146,14 +142,13 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                             },
                             {
                                 name: 'close_session',
-                                description: 'End the conversation and close the session. Call this when the barista says goodbye or the customer is leaving.'
+                                description: 'REQUIRED: Call this function immediately when the user says goodbye, bye, see you later, I\'m done, or wants to leave. You MUST call this function before saying your farewell message. Do not just say goodbye - actually call this function.'
                             }
                         ]
                     }]
                 },
                 callbacks: {
                     onopen: () => {
-                        console.log('[useGeminiSession] WebSocket connected');
                         setIsConnected(true);
                     },
                     onmessage: (msg: LiveServerMessage) => {
@@ -169,10 +164,6 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                         }
                     },
                     onclose: (event: any) => {
-                        console.log(
-                            '[useGeminiSession] WebSocket closed:',
-                            event.reason || 'Connection closed'
-                        );
                         setIsConnected(false);
                     },
                 },
@@ -212,13 +203,10 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
         setIsConnected(false);
         setError(null);
         setTokenUsage(null);
-
-        console.log('[useGeminiSession] Disconnected');
     };
 
     const sendAudio = (base64Audio: string): void => {
         if (!sessionRef.current) {
-            console.warn('[useGeminiSession] Cannot send audio: not connected');
             return;
         }
 

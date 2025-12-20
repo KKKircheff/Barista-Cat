@@ -37,17 +37,31 @@ export function VoiceChat() {
                     console.error('[VoiceChat] Audio playback error:', err);
                 });
             }
+
+            // FALLBACK: Detect goodbye in text if function wasn't called
+            if (message.text && message.turnComplete) {
+                const text = message.text.toLowerCase();
+                const goodbyeKeywords = ['goodbye', 'bye', 'see you', 'session closed', 'take care', 'later'];
+                const containsGoodbye = goodbyeKeywords.some(keyword => text.includes(keyword));
+
+                if (containsGoodbye) {
+                    setTimeout(() => {
+                        handleDisconnect();
+                    }, 2000); // Give audio time to finish
+                }
+            }
         },
         onFunctionCall: (functionName, args) => {
-            console.log('[VoiceChat] Function call received:', functionName, args);
-
             if (functionName === 'show_menu') {
                 setShowMenu(true);
             } else if (functionName === 'hide_menu') {
                 setShowMenu(false);
             } else if (functionName === 'close_session') {
-                // Barista is saying goodbye, clean up
-                handleDisconnect();
+                // Close after a short delay to let current audio finish
+                setShowMenu(false);
+                setTimeout(() => {
+                    handleDisconnect();
+                }, 2000);
             }
         },
     });
@@ -75,7 +89,6 @@ export function VoiceChat() {
             // Auto-start microphone recording
             await audioCapture.startRecording(geminiSession.sendAudio);
 
-            console.log('[VoiceChat] Connected and recording started');
             setIsConnecting(false);
         } catch (error) {
             console.error('[VoiceChat] Failed to initialize:', error);

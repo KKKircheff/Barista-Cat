@@ -30,6 +30,7 @@ export interface ParsedServerMessage {
   turnComplete: boolean;
   usageMetadata?: TokenUsage;
   functionCall?: {
+    id: string;
     name: 'show_menu' | 'hide_menu' | 'close_session';
     args?: any;
   };
