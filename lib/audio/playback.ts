@@ -1,8 +1,8 @@
 // Pre-buffering configuration
-const PRE_BUFFER_COUNT = 10; // Wait for 10 chunks before starting playback (~400ms safety buffer)
+const PRE_BUFFER_COUNT = 4; // Wait for 10 chunks before starting playback (~400ms safety buffer)
 const REBUFFER_THRESHOLD = 3; // Re-buffer if queue drops below this during playback
-const LOW_BUFFER_THRESHOLD = 5; // Warn when queue drops to 5 chunks
-const SCHEDULE_AHEAD_COUNT = 3; // Always keep 3 chunks scheduled ahead
+const LOW_BUFFER_THRESHOLD = 2; // Warn when queue drops to 5 chunks
+const SCHEDULE_AHEAD_COUNT = 2; // Always keep 3 chunks scheduled ahead
 
 export function base64ToUint8Array(base64: string): Uint8Array {
     const binaryString = atob(base64);
@@ -44,6 +44,7 @@ export function createAudioPlayer(sampleRate: number = 24000) {
     let hasStartedPlayback = false; // Track if we've started initial playback
     let isRebuffering = false; // Track if we're in re-buffering state
     let scheduledChunks = 0; // Track how many chunks have been scheduled ahead
+    let onPlaybackStateChange: ((isPlaying: boolean) => void) | null = null; // NEW: Callback for playback state changes
 
     // Initialize audio context
     const init = () => {
@@ -52,6 +53,13 @@ export function createAudioPlayer(sampleRate: number = 24000) {
             gainNode = audioContext.createGain();
             gainNode.connect(audioContext.destination);
             nextScheduledTime = audioContext.currentTime;
+        }
+    };
+
+    // Helper: Notify playback state changes
+    const notifyPlaybackState = (playing: boolean) => {
+        if (onPlaybackStateChange) {
+            onPlaybackStateChange(playing);
         }
     };
 
@@ -84,6 +92,11 @@ export function createAudioPlayer(sampleRate: number = 24000) {
         // Don't schedule more than SCHEDULE_AHEAD_COUNT chunks
         if (scheduledChunks >= SCHEDULE_AHEAD_COUNT) {
             return;
+        }
+
+        // Notify that playback started (first chunk)
+        if (!isPlaying) {
+            notifyPlaybackState(true);
         }
 
         isPlaying = true;
@@ -137,6 +150,12 @@ export function createAudioPlayer(sampleRate: number = 24000) {
 
             // Decrement scheduled count
             scheduledChunks--;
+
+            // Notify when all playback stops
+            if (activeSources.length === 0 && isPlaying) {
+                isPlaying = false;
+                notifyPlaybackState(false);
+            }
 
             // Only try to play next chunk if we're not re-buffering
             // Re-buffering will resume playback when buffer recovers
@@ -260,11 +279,17 @@ export function createAudioPlayer(sampleRate: number = 24000) {
         }
     };
 
+    // Set callback for playback state changes
+    const setOnPlaybackStateChange = (callback: (isPlaying: boolean) => void) => {
+        onPlaybackStateChange = callback;
+    };
+
     return {
         play,
         stop,
         setVolume,
         cleanup,
         isPlaying: () => isPlaying,
+        setOnPlaybackStateChange, // NEW
     };
 }

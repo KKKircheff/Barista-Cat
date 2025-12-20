@@ -162,3 +162,19 @@
       theme('colors.slate.900'));
   }
 }
+
+/* Voice indicator pulse animation - preserves rotation */
+@keyframes voice-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: rotate(var(--rotation, 0deg)) translateY(var(--radius, -60px)) scaleY(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(var(--rotation, 0deg)) translateY(var(--radius, -60px)) scaleY(1.2);
+  }
+}
+
+.animate-voice-pulse {
+  animation: voice-pulse ease-in-out infinite;
+}

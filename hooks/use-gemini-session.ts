@@ -1,10 +1,14 @@
-import {useState, useRef} from 'react';
+import {useState, useRef, useCallback} from 'react';
+import {GoogleGenAI, Modality} from '@google/genai';
+import type {LiveServerMessage} from '@google/genai';
+import {GEMINI_MODELS} from '@/lib/gemini';
+import {parseLiveServerMessage} from '@/lib/gemini';
 import type {ParsedServerMessage, TokenUsage} from '@/lib/types';
 
 interface UseGeminiSessionOptions {
     onMessage?: (message: ParsedServerMessage) => void;
+    onFunctionCall?: (functionName: string, args?: any) => void;
     onError?: (error: Error) => void;
-    systemInstruction?: string;
 }
 
 interface UseGeminiSessionReturn {
@@ -17,10 +21,10 @@ interface UseGeminiSessionReturn {
 }
 
 /**
- * Custom hook for managing Gemini Live API session via HTTP streaming proxy.
+ * Custom hook for managing Gemini Live API session via direct WebSocket.
  *
- * Security: API key stays server-side, client communicates via HTTP endpoints.
- * Uses Server-Sent Events (SSE) for receiving responses from Gemini.
+ * Security: API key is fetched from backend endpoint and used for direct connection.
+ * Uses direct WebSocket connection to Gemini Live API for minimal latency.
  *
  * @param options - Callbacks and configuration for the session
  * @returns Session controls, connection status, and error state
@@ -30,84 +34,161 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
     const [error, setError] = useState<string | null>(null);
     const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
 
-    const sessionIdRef = useRef<string | null>(null);
-    const eventSourceRef = useRef<EventSource | null>(null);
+    const sessionRef = useRef<any | null>(null);
+
+    const handleMessage = useCallback(
+        (message: LiveServerMessage) => {
+            // Parse message using existing utility
+            const parsed = parseLiveServerMessage(message);
+
+            // Update token usage (cumulative)
+            if (parsed.usageMetadata) {
+                setTokenUsage((prev) => {
+                    if (!prev) return parsed.usageMetadata!;
+
+                    return {
+                        promptTokenCount:
+                            (prev.promptTokenCount || 0) + (parsed.usageMetadata!.promptTokenCount || 0),
+                        candidatesTokenCount:
+                            (prev.candidatesTokenCount || 0) +
+                            (parsed.usageMetadata!.candidatesTokenCount || 0),
+                        totalTokenCount:
+                            (prev.totalTokenCount || 0) + (parsed.usageMetadata!.totalTokenCount || 0),
+                    };
+                });
+            }
+
+            // Handle function calls
+            if (parsed.functionCall) {
+                handleFunctionCall(parsed.functionCall.name, parsed.functionCall.args);
+            }
+
+            // Call user-provided onMessage callback
+            if (options?.onMessage) {
+                options.onMessage(parsed);
+            }
+        },
+        [options]
+    );
+
+    const handleFunctionCall = useCallback(
+        (functionName: string, args?: any) => {
+            console.log('[useGeminiSession] Function call:', functionName, args);
+
+            // Notify parent component
+            if (options?.onFunctionCall) {
+                options.onFunctionCall(functionName, args);
+            }
+
+            // Send function response back to Gemini
+            if (sessionRef.current) {
+                sessionRef.current.sendToolResponse({
+                    functionResponses: [
+                        {
+                            name: functionName,
+                            response: {
+                                success: true,
+                                message: `Function ${functionName} executed`,
+                            },
+                        },
+                    ],
+                });
+            }
+        },
+        [options]
+    );
 
     const connect = async (): Promise<void> => {
         setError(null);
 
         try {
-            // 1. Create session on server (API key stays server-side)
-            const response = await fetch('/api/gemini/session', {method: 'POST'});
+            // Step 1: Get API key from backend
+            console.log('[useGeminiSession] Requesting API key...');
+            const tokenResponse = await fetch('/api/gemini/token', {method: 'POST'});
 
-            if (!response.ok) {
-                throw new Error(`Failed to create session: ${response.statusText}`);
+            if (!tokenResponse.ok) {
+                throw new Error(`Failed to get API key: ${tokenResponse.statusText}`);
             }
 
-            const {sessionId} = await response.json();
-            sessionIdRef.current = sessionId;
+            const {token} = await tokenResponse.json();
+            console.log('[useGeminiSession] API key received');
 
-            console.log(`[useGeminiSession] Session created: ${sessionId}`);
+            // Step 2: Initialize SDK with API key
+            const ai = new GoogleGenAI({apiKey: token});
 
-            // 2. Establish Server-Sent Events stream for responses
-            const eventSource = new EventSource(`/api/gemini/stream?sessionId=${sessionId}`);
+            // Step 3: Connect to Gemini Live WebSocket directly
+            console.log('[useGeminiSession] Connecting to Gemini Live API...');
+            const session = await ai.live.connect({
+                model: GEMINI_MODELS.LIVE_FLASH_NATIVE,
+                config: {
+                    responseModalities: [Modality.AUDIO],
+                    systemInstruction: {
+                        parts: [{
+                            text: 'You are "Whiskerjack", a post-apocalyptic barista cat. Be sarcastic but charming. Keep responses under 20 words. When conversation starts with empty input, greet with max 10 words like: "What\'s it gonna be?" or "Yeah, we\'re open. Barely."'
+                        }]
+                    },
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: 'Iapetus'
+                            }
+                        }
+                    },
+                    tools: [{
+                        functionDeclarations: [
+                            {
+                                name: 'show_menu',
+                                description: 'Show the cocktails and drinks menu to the user. Call this when user asks about drinks, menu, cocktails, or what beverages are available.'
+                            },
+                            {
+                                name: 'hide_menu',
+                                description: 'Hide the cocktails menu from view. Call this when user is done looking at the menu or conversation moves on.'
+                            },
+                            {
+                                name: 'close_session',
+                                description: 'End the conversation and close the session. Call this when the barista says goodbye or the customer is leaving.'
+                            }
+                        ]
+                    }]
+                },
+                callbacks: {
+                    onopen: () => {
+                        console.log('[useGeminiSession] WebSocket connected');
+                        setIsConnected(true);
+                    },
+                    onmessage: (msg: LiveServerMessage) => {
+                        handleMessage(msg);
+                    },
+                    onerror: (event: any) => {
+                        const errorMsg = event.message || 'WebSocket error';
+                        console.error('[useGeminiSession] WebSocket error:', event);
+                        setError(errorMsg);
 
-            eventSource.onmessage = (event) => {
-                try {
-                    const parsed = JSON.parse(event.data) as ParsedServerMessage;
+                        if (options?.onError) {
+                            options.onError(new Error(errorMsg));
+                        }
+                    },
+                    onclose: (event: any) => {
+                        console.log(
+                            '[useGeminiSession] WebSocket closed:',
+                            event.reason || 'Connection closed'
+                        );
+                        setIsConnected(false);
+                    },
+                },
+            });
 
-                    // Skip connection messages
-                    if ('type' in parsed && parsed.type === 'connected') {
-                        console.log('[useGeminiSession] Stream connected');
-                        return;
-                    }
+            sessionRef.current = session;
 
-                    // Skip timeout messages
-                    if ('type' in parsed && parsed.type === 'timeout') {
-                        console.log('[useGeminiSession] Stream timeout, will reconnect');
-                        return;
-                    }
-
-                    // Update cumulative token usage if available
-                    if (parsed.usageMetadata) {
-                        setTokenUsage((prev) => {
-                            if (!prev) return parsed.usageMetadata!;
-
-                            return {
-                                promptTokenCount:
-                                    (prev.promptTokenCount || 0) + (parsed.usageMetadata!.promptTokenCount || 0),
-                                candidatesTokenCount:
-                                    (prev.candidatesTokenCount || 0) +
-                                    (parsed.usageMetadata!.candidatesTokenCount || 0),
-                                totalTokenCount:
-                                    (prev.totalTokenCount || 0) + (parsed.usageMetadata!.totalTokenCount || 0),
-                            };
-                        });
-                    }
-
-                    // Call user-provided onMessage callback
-                    if (options?.onMessage) {
-                        options.onMessage(parsed);
-                    }
-                } catch (err) {
-                    console.error('[useGeminiSession] Parse error:', err);
-                }
-            };
-
-            eventSource.onerror = (err) => {
-                const errorMessage = 'Stream connection error';
-                console.error('[useGeminiSession] SSE error:', err);
-                setError(errorMessage);
-
-                if (options?.onError) {
-                    options.onError(new Error(errorMessage));
-                }
-
-                // Don't set isConnected to false on error - stream may reconnect
-            };
-
-            eventSourceRef.current = eventSource;
-            setIsConnected(true);
+            // Send initial greeting trigger (empty message) after session is established
+            session.sendClientContent({
+                turns: [
+                    {
+                        role: 'user',
+                        parts: [{text: ''}],
+                    },
+                ],
+            });
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to connect';
             console.error('[useGeminiSession] Connect error:', err);
@@ -123,21 +204,9 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
     };
 
     const disconnect = (): void => {
-        // Close SSE stream
-        if (eventSourceRef.current) {
-            eventSourceRef.current.close();
-            eventSourceRef.current = null;
-        }
-
-        // Close server-side session
-        if (sessionIdRef.current) {
-            fetch(`/api/gemini/session?sessionId=${sessionIdRef.current}`, {
-                method: 'DELETE',
-            }).catch((err) => {
-                console.error('[useGeminiSession] Error closing session:', err);
-            });
-
-            sessionIdRef.current = null;
+        if (sessionRef.current) {
+            sessionRef.current.close();
+            sessionRef.current = null;
         }
 
         setIsConnected(false);
@@ -148,29 +217,16 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
     };
 
     const sendAudio = (base64Audio: string): void => {
-        if (!sessionIdRef.current) {
+        if (!sessionRef.current) {
             console.warn('[useGeminiSession] Cannot send audio: not connected');
             return;
         }
 
-        // Send audio chunk to server via HTTP POST
-        fetch('/api/gemini/audio', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                sessionId: sessionIdRef.current,
-                audioData: base64Audio,
-            }),
-        })
-        .then((response) => {
-            if (!response.ok) {
-                // Log error but don't fail - audio is continuous stream
-                console.warn(`[useGeminiSession] Audio send failed: ${response.status} ${response.statusText}`);
-            }
-        })
-        .catch((err) => {
-            console.error('[useGeminiSession] Failed to send audio:', err);
-            setError(err instanceof Error ? err.message : 'Failed to send audio');
+        sessionRef.current.sendRealtimeInput({
+            audio: {
+                data: base64Audio,
+                mimeType: 'audio/pcm;rate=16000',
+            },
         });
     };
 

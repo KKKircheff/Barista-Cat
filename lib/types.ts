@@ -1,4 +1,5 @@
 // Core TypeScript interfaces for Voice Agent
+// Note: LiveSession and ServerMessage are now imported from '@google/genai'
 
 // Message in conversation transcript
 export interface Message {
@@ -15,30 +16,6 @@ export interface VoiceState {
   error: string | null;
 }
 
-// Gemini Live API session interface
-export interface LiveSession {
-  sendRealtimeInput: (data: { audio: { data: string; mimeType: string } }) => void;
-  close: () => void;
-}
-
-// Gemini Live API message types
-export interface ServerMessage {
-  serverContent?: {
-    turnComplete?: boolean;
-    modelTurn?: {
-      parts: Array<{
-        text?: string;
-        inlineData?: {
-          data: string;
-          mimeType: string;
-        };
-      }>;
-    };
-  };
-  text?: string;
-  data?: string;
-}
-
 // Token usage metadata
 export interface TokenUsage {
   promptTokenCount?: number;
@@ -52,6 +29,10 @@ export interface ParsedServerMessage {
   audioData?: string;
   turnComplete: boolean;
   usageMetadata?: TokenUsage;
+  functionCall?: {
+    name: 'show_menu' | 'hide_menu' | 'close_session';
+    args?: any;
+  };
 }
 
 // Audio configuration

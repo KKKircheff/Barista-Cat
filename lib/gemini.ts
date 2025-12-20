@@ -1,5 +1,6 @@
 import {GoogleGenAI, Modality} from '@google/genai';
-import type {LiveSession, ServerMessage, SessionConfig} from './types';
+import type {LiveServerMessage} from '@google/genai';
+import type {SessionConfig} from './types';
 
 // Model names
 export const GEMINI_MODELS = {
@@ -7,16 +8,16 @@ export const GEMINI_MODELS = {
     LIVE_FLASH_NATIVE: 'gemini-2.5-flash-native-audio-preview-12-2025',
 } as const;
 
-export async function connectLiveSession(
+export async function connectany(
     apiKey: string,
     systemInstruction: string,
     callbacks: {
         onOpen?: () => void;
-        onMessage?: (message: ServerMessage) => void;
+        onMessage?: (message: LiveServerMessage) => void;
         onError?: (error: Error) => void;
         onClose?: (reason: string) => void;
     }
-): Promise<LiveSession> {
+): Promise<any> {
     if (!apiKey) {
         throw new Error('API key is required. Please set GEMINI_API_KEY in .env.local');
     }
@@ -42,7 +43,7 @@ export async function connectLiveSession(
                     callbacks.onOpen?.();
                 },
                 onmessage: (message: any) => {
-                    callbacks.onMessage?.(message as ServerMessage);
+                    callbacks.onMessage?.(message as LiveServerMessage);
                 },
                 onerror: (event: any) => {
                     console.error('[Gemini] Error:', event.message || 'Connection error');
@@ -56,7 +57,7 @@ export async function connectLiveSession(
             },
         });
 
-        return session as LiveSession;
+        return session as any;
     } catch (error) {
         console.error('[Gemini] Failed to connect:', error);
         throw new Error(
@@ -65,7 +66,7 @@ export async function connectLiveSession(
     }
 }
 
-export function sendAudioChunk(session: LiveSession, base64Audio: string): void {
+export function sendAudioChunk(session: any, base64Audio: string): void {
     try {
         session.sendRealtimeInput({
             audio: {
@@ -87,32 +88,7 @@ export function sendAudioChunk(session: LiveSession, base64Audio: string): void 
  * (text + audio + thought). These are informational and expected when using
  * AUDIO response modality. The warnings are suppressed in VoiceChat.tsx.
  */
-export function parseServerMessage(message: any): {
-    text?: string;
-    audioData?: string;
-    turnComplete: boolean;
-    usageMetadata?: {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-        totalTokenCount?: number;
-    };
-} {
-    const result = {
-        text: undefined as string | undefined,
-        audioData: undefined as string | undefined,
-        turnComplete: false,
-        usageMetadata: undefined as any,
-    };
-
-    // Check for setup complete (initial handshake)
-    if (message.setupComplete) {
-        return result;
-    }
-
-    // Check for turn complete
-    if (message.serverContent?.turnComplete) {
-        result.turnComplete = true;
-    }
+export function parseLiveServerMessage(message: any): {    text?: string;    audioData?: string;    turnComplete: boolean;    usageMetadata?: {        promptTokenCount?: number;        candidatesTokenCount?: number;        totalTokenCount?: number;    };    functionCall?: {        name: 'show_menu' | 'hide_menu' | 'close_session';        args?: any;    };} {    const result = {        text: undefined as string | undefined,        audioData: undefined as string | undefined,        turnComplete: false,        usageMetadata: undefined as any,        functionCall: undefined as any,    };    // Check for setup complete (initial handshake)    if (message.setupComplete) {        return result;    }    // Check for turn complete    if (message.serverContent?.turnComplete) {        result.turnComplete = true;    }    // Check for function calls in toolCall.functionCalls (primary location)    if (message.toolCall?.functionCalls) {        for (const funcCall of message.toolCall.functionCalls) {            if (['show_menu', 'hide_menu', 'close_session'].includes(funcCall.name)) {                result.functionCall = {                    name: funcCall.name,                    args: funcCall.args,                };                break; // Only process first function call            }        }    }    // Also check for function calls in serverContent.modelTurn.parts (alternative location)    if (!result.functionCall && message.serverContent?.modelTurn?.parts) {        for (const part of message.serverContent.modelTurn.parts) {            if (                part.functionCall &&                ['show_menu', 'hide_menu', 'close_session'].includes(part.functionCall.name)            ) {                result.functionCall = {                    name: part.functionCall.name,                    args: part.functionCall.args,                };                break;            }        }    }
 
     // Extract text content - try multiple paths
     if (message.text) {
@@ -157,7 +133,7 @@ export function parseServerMessage(message: any): {
     return result;
 }
 
-export function closeSession(session: LiveSession): void {
+export function closeSession(session: any): void {
     try {
         session.close();
     } catch (error) {

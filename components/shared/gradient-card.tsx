@@ -8,7 +8,7 @@ interface GradientCardProps extends React.ComponentProps<typeof Card> {
 
 export function GradientCard({ variant = 'glass', children, className, ...props }: GradientCardProps) {
     const variantStyles = {
-        glass: 'bg-[#161b1f] backdrop-blur-lg border border-[var(--gradient-teal)]/30',
+        glass: 'bg-[#161b1f]/90 backdrop-blur-lg border border-[var(--gradient-teal)]/30',
         gradient: 'bg-gradient-to-br from-[var(--gradient-teal)]/20 to-[var(--gradient-gold)]/20 border border-[var(--gradient-orange)]/30'
     };
 

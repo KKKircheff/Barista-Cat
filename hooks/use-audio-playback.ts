@@ -4,7 +4,7 @@ import { createAudioPlayer } from '@/lib/audio/playback';
 interface UseAudioPlaybackReturn {
   play: (base64Audio: string) => Promise<void>;
   stop: () => void;
-  isPlaying: boolean;
+  isPlayingAudio: boolean; // Renamed from isPlaying for clarity
 }
 
 /**
@@ -16,15 +16,21 @@ interface UseAudioPlaybackReturn {
  */
 export function useAudioPlayback(sampleRate: number = 24000): UseAudioPlaybackReturn {
   const audioPlayerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
   // Initialize audio player on mount
   useEffect(() => {
-    audioPlayerRef.current = createAudioPlayer(sampleRate);
+    const player = createAudioPlayer(sampleRate);
+    audioPlayerRef.current = player;
+
+    // Subscribe to playback state changes
+    player.setOnPlaybackStateChange((playing) => {
+      setIsPlayingAudio(playing);
+    });
 
     // Cleanup on unmount
     return () => {
-      audioPlayerRef.current?.cleanup();
+      player.cleanup();
     };
   }, [sampleRate]);
 
@@ -34,26 +40,22 @@ export function useAudioPlayback(sampleRate: number = 24000): UseAudioPlaybackRe
     }
 
     try {
-      setIsPlaying(true);
       await audioPlayerRef.current.play(base64Audio);
     } catch (error) {
       console.error('[useAudioPlayback] Playback error:', error);
       throw error;
-    } finally {
-      setIsPlaying(false);
     }
   };
 
   const stop = (): void => {
     if (audioPlayerRef.current) {
       audioPlayerRef.current.stop();
-      setIsPlaying(false);
     }
   };
 
   return {
     play,
     stop,
-    isPlaying,
+    isPlayingAudio,
   };
 }

@@ -14,7 +14,8 @@ export function GradientButton({
 }: GradientButtonProps) {
     const variantStyles = {
         'purple-pink':
-            'bg-gradient-to-r from-[var(--gradient-teal)] to-[var(--gradient-gold)] hover:from-[var(--gradient-orange)] hover:to-[var(--gradient-rust)] text-white border-0 shadow-[0_0_20px_rgba(91,129,131,0.5)] hover:shadow-[0_0_30px_rgba(255,178,68,0.7)]',
+            'bg-gradient-to-r from-[var(--gradient-orange)] to-[var(--gradient-rust)] hover:from-[var(--gradient-rust)] hover:to-[var(--gradient-orange)] text-white border-0 shadow-[0_0_20px_rgba(91,129,131,0.5)] hover:shadow-[0_0_30px_rgba(255,178,68,0.7)]',
+        // 'bg-gradient-to-r from-[var(--gradient-teal)] to-[var(--gradient-gold)] hover:from-[var(--gradient-orange)] hover:to-[var(--gradient-rust)] text-white border-0 shadow-[0_0_20px_rgba(91,129,131,0.5)] hover:shadow-[0_0_30px_rgba(255,178,68,0.7)]',
         green: 'bg-[var(--gradient-teal)] hover:bg-[var(--gradient-teal)]/80 text-white border-0 shadow-[0_0_20px_rgba(91,129,131,0.5)]',
         red: 'bg-[var(--gradient-rust)] hover:bg-[var(--gradient-rust)]/80 text-white border-0 animate-pulse shadow-[0_0_20px_rgba(158,71,0,0.6)]',
         ghost:

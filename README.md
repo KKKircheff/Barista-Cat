@@ -1,6 +1,6 @@
 # VocieAgent
 
-## Voice Agent Knowledge Base
+## Barista Cat Knowledge Base
 
 ### About This System
 
