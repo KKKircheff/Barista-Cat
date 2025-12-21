@@ -15,7 +15,7 @@ export function GradientCard({ variant = 'glass', children, className, ...props 
     return (
         <Card
             className={cn(
-                'rounded-2xl shadow-2xl',
+                'rounded-2xl shadow-2xl p-3',
                 variantStyles[variant],
                 className
             )}

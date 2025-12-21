@@ -2,6 +2,39 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 
+const COFFEES = [
+    {
+        name: 'Ashfall Espresso',
+        ingredients: 'Dark roast espresso, scorched sugar, a pinch of smoked salt',
+        description: 'Strong, bitter, and unapologetic. Like the day the bombs fell.',
+    },
+    {
+        name: 'Wasteland Latte',
+        ingredients: 'Espresso, steamed milk, canned vanilla syrup',
+        description: 'Comfort in a cracked mug. Surprisingly hopeful.',
+    },
+    {
+        name: 'Rad-Free Cold Brew',
+        ingredients: 'Cold-brewed coffee, charcoal-filtered water',
+        description: 'Smooth, clean, and allegedly safe.',
+    },
+    {
+        name: 'Scavenger’s Mocha',
+        ingredients: 'Espresso, cocoa powder, condensed milk',
+        description: 'Sweet, rich, and traded often for ammunition.',
+    },
+    {
+        name: 'The Cat Nap Cappuccino',
+        ingredients: 'Espresso, foamed milk, cinnamon dust',
+        description: 'Balanced and civilized, like a proper nap schedule.',
+    },
+    {
+        name: 'Blackout Brew',
+        ingredients: 'Triple espresso, no additives',
+        description: 'For staying awake when the generator dies.',
+    },
+];
+
 const COCKTAILS = [
     {
         name: 'Molotov Mocktail',
@@ -42,32 +75,54 @@ interface MenuCardProps {
 
 export function MenuCard({ onClose }: MenuCardProps) {
     return (
-        <Card className="w-full max-w-2xl mx-auto bg-[#161b1f]/90 text-gray-300">
-            <CardHeader className="relative">
-                <CardTitle className="text-2xl text-gray-300">Cocktails Menu</CardTitle>
+        <Card className="w-full max-w-4xl mx-auto bg-[#161b1f]/90 text-gray-300 p-1">
+            <CardHeader className="relative px-2">
+                <CardTitle className="text-2xl text-gray-300 ">Menu</CardTitle>
                 {onClose && (
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute top-4 right-4 h-8 w-8 text-gray-300"
+                        className="absolute top-1 right-1 h-8 w-8 text-gray-300"
                         onClick={onClose}
                     >
                         <X className="h-4 w-4" />
                     </Button>
                 )}
             </CardHeader>
-            <CardContent>
-                <div className="grid gap-4">
-                    {COCKTAILS.map((drink, index) => (
-                        <div key={index} className="border-b pb-3 last:border-b-0">
-                            <h3 className="font-semibold text-lg text-gray-200">
-                                {drink.name}
-                                {drink.subtitle && <span className="text-sm ml-1 text-white">{drink.subtitle}</span>}
-                            </h3>
-                            <p className="text-sm text-gray-400 italic">{drink.ingredients}</p>
-                            <p className="text-sm mt-1 text-gray-200">{drink.description}</p>
+            <CardContent className="max-h-100 overflow-y-auto px-2">
+                <div className="grid gap-4 md:grid-cols-2">
+                    {/* Cocktail Section */}
+                    <div className="md:pl-4">
+                        <h2 className="text-xl font-semibold mb-4 text-gray-200">Cocktails</h2>
+                        <div className="grid gap-4">
+                            {COCKTAILS.map((drink, index) => (
+                                <div key={index} className="border-b pb-3 last:border-b-0">
+                                    <h3 className="font-semibold text-lg text-gray-200">
+                                        {drink.name}
+                                        {drink.subtitle && <span className="text-sm ml-1 text-white">{drink.subtitle}</span>}
+                                    </h3>
+                                    <p className="text-sm text-gray-400 italic">{drink.ingredients}</p>
+                                    <p className="text-sm mt-1 text-gray-200">{drink.description}</p>
+                                </div>
+                            ))}
                         </div>
-                    ))}
+                    </div>
+                    {/* Coffee Section */}
+                    <div className="border-r-0 md:border-r md:pr-4">
+                        <h2 className="text-xl font-semibold mb-4 text-gray-200">Coffees</h2>
+                        <div className="grid gap-4">
+                            {COFFEES.map((drink, index) => (
+                                <div key={index} className="border-b pb-3 last:border-b-0">
+                                    <h3 className="font-semibold text-lg text-gray-200">
+                                        {drink.name}
+                                    </h3>
+                                    <p className="text-sm text-gray-400 italic">{drink.ingredients}</p>
+                                    <p className="text-sm mt-1 text-gray-200">{drink.description}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                 </div>
             </CardContent>
         </Card>

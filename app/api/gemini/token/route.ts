@@ -18,27 +18,30 @@ export async function POST(_request: NextRequest) {
         });
 
         // Calculate expiration times
-        const expireTime = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
-        const newSessionExpireTime = new Date(Date.now() + 60 * 1000); // 1 minute
+        const expireTimeISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        const newSessionExpireISO = new Date(Date.now() + 60 * 1000).toISOString();
 
         // Create ephemeral token with FULL configuration
         const tokenResponse = await client.authTokens.create({
             config: {
-                uses: 1, // Secure: One session per token
+                uses: 1,
+                expireTime: expireTimeISO,
+                newSessionExpireTime: newSessionExpireISO,
                 liveConnectConstraints: {
                     model: 'gemini-2.5-flash-native-audio-preview-12-2025',
                     config: {
                         systemInstruction: {
                             parts: [{text: getSystemInstructionWithContext()}],
                         },
-                        responseModalities: [Modality.AUDIO],
-                        realtimeInputConfig: {
-                            automaticActivityDetection: {
-                                disabled: false,
-                                startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH' as any,
-                                prefixPaddingMs: 100,
-                            },
-                        },
+                        responseModalities: ['AUDIO'] as any,
+                        // realtimeInputConfig: {
+                        //     automaticActivityDetection: {
+                        //         disabled: false,
+                        //         startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH' as any,
+                        //         // prefixPaddingMs: 100,
+                        //         silenceDurationMs: 200,
+                        //     },
+                        // },
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
@@ -75,7 +78,7 @@ export async function POST(_request: NextRequest) {
         // Return ephemeral token (not raw API key)
         return NextResponse.json({
             token: tokenResponse.name,
-            expiresAt: expireTime.toISOString(),
+            expiresAt: expireTimeISO,
         });
     } catch (error) {
         console.error('[API /api/gemini/token POST] Error creating ephemeral token:', error);
