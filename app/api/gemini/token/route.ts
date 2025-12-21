@@ -18,8 +18,8 @@ export async function POST(_request: NextRequest) {
         });
 
         // Calculate expiration times
-        const expireTimeISO = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-        const newSessionExpireISO = new Date(Date.now() + 60 * 1000).toISOString();
+        const expireTimeISO = new Date(Date.now() + 180 * 1000).toISOString();
+        const newSessionExpireISO = new Date(Date.now() + 180 * 1000).toISOString();
 
         // Create ephemeral token with FULL configuration
         const tokenResponse = await client.authTokens.create({
