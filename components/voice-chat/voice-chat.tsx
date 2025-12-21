@@ -161,12 +161,12 @@ export function VoiceChat() {
     return (
         <div className="w-full space-y-6 gap-3">
             {/* Barista image with voice indicator overlay  & Menu*/}
-            <div className="flex flex-col md:flex-row gap-10">
-                <div className={`w-full ${showMenu ? 'md:w-1/3' : 'md:w-full'}`}>
+            <div className="flex flex-col lg:flex-row gap-10">
+                <div className={`w-full ${showMenu ? 'lg:w-1/3' : 'lg:w-full'}`}>
                     <BaristaImage showVoiceIndicator={audioPlayback.isPlayingAudio} />
                 </div>
                 {showMenu && (
-                    <div className="w-full md:w-2/3">
+                    <div className="w-full lg:w-2/3">
                         <MenuCard onClose={() => setShowMenu(false)} />
                     </div>
                 )}

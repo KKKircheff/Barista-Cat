@@ -9,7 +9,7 @@ export default function Home() {
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat blur-md brightness-75"
                 style={{ backgroundImage: `url(${backgroundImage.src})` }}
             />
-            <main className="relative flex flex-col items-center justify-center gap-8 p-8 max-w-400">
+            <main className="relative flex flex-col items-center justify-center gap-8 p-2 md:p-8 max-w-400">
                 <div className="text-center space-y-4">
                     <h1 className="text-xl md:text-5xl pb-2 font-bold text-white tracking-tight text-shadow-glow">
                         Welcome to Whiskerjack's Bar

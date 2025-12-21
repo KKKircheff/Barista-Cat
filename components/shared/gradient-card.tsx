@@ -15,13 +15,13 @@ export function GradientCard({ variant = 'glass', children, className, ...props 
     return (
         <Card
             className={cn(
-                'rounded-2xl shadow-2xl p-3',
+                'rounded-2xl shadow-2xl',
                 variantStyles[variant],
                 className
             )}
             {...props}
         >
-            <CardContent className="p-8">{children}</CardContent>
+            <CardContent className="p-1 md:p-8">{children}</CardContent>
         </Card>
     );
 }

@@ -24,8 +24,9 @@ export function GradientButton({
 
     return (
         <Button
+            size={'lg'}
             className={cn(
-                'rounded-full px-8 py-4 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all text-shadow-glow',
+                'rounded-full px-16 py-4 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all text-shadow-glow',
                 variantStyles[variant],
                 className
             )}
