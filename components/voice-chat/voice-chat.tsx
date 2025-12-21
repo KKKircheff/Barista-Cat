@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useGeminiSession } from '@/hooks/use-gemini-session';
 import { useAudioCapture } from '@/hooks/use-audio-capture';
 import { useAudioPlayback } from '@/hooks/use-audio-playback';
@@ -28,6 +28,7 @@ export function VoiceChat() {
     const [isInitializing, setIsInitializing] = useState(true); // Start in initializing state
     const [sessionEnded, setSessionEnded] = useState(false); // Track if session has ended
     const [isClosing, setIsClosing] = useState(false); // Track if session is closing
+    const hasAutoInitialized = useRef(false); // Track if auto-initialization has run
 
     // Custom hooks manage all business logic
     const audioPlayback = useAudioPlayback(24000);
@@ -63,10 +64,12 @@ export function VoiceChat() {
         },
     });
 
-    // Auto-initialize everything on page load (or when user clicks "Go to bar" after session ends)
+    // Auto-initialize everything on page load (only runs once)
     useEffect(() => {
         const autoInitialize = async () => {
-            if (!geminiSession.isConnected && isInitializing && !sessionEnded) {
+            // Only run on first mount, not on "Go to bar" clicks
+            if (!geminiSession.isConnected && isInitializing && !sessionEnded && !hasAutoInitialized.current) {
+                hasAutoInitialized.current = true; // Mark as initialized
                 try {
                     console.log('[VoiceChat] Auto-initializing on page load...');
                     const startTime = performance.now();
@@ -125,7 +128,7 @@ export function VoiceChat() {
             console.log('[VoiceChat] Starting new session...');
             setSessionEnded(false);
             setIsClosing(false);
-            setIsInitializing(true);
+            // Don't set isInitializing to avoid triggering the useEffect
             const startTime = performance.now();
 
             // Step 1: Connect to Gemini (skip greeting for now)
@@ -146,10 +149,8 @@ export function VoiceChat() {
 
             const elapsed = performance.now() - startTime;
             console.log(`[VoiceChat] New session started in ${elapsed.toFixed(0)}ms`);
-            setIsInitializing(false);
         } catch (error) {
             console.error('[VoiceChat] Failed to start new session:', error);
-            setIsInitializing(false);
             setSessionEnded(true);
         }
     };

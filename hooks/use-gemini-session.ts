@@ -1,8 +1,7 @@
 import {useState, useRef, useCallback} from 'react';
 import {GoogleGenAI} from '@google/genai';
 import type {LiveServerMessage} from '@google/genai';
-import {GEMINI_MODELS} from '@/lib/gemini';
-import {parseLiveServerMessage} from '@/lib/gemini';
+import {GEMINI_MODELS, parseLiveServerMessage} from '@/lib/gemini-utils';
 import type {ParsedServerMessage, TokenUsage} from '@/lib/types';
 
 interface UseGeminiSessionOptions {
@@ -30,10 +29,8 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
 
     const handleMessage = useCallback(
         (message: LiveServerMessage) => {
-            // Parse message using existing utility
             const parsed = parseLiveServerMessage(message);
 
-            // Update token usage (cumulative)
             if (parsed.usageMetadata) {
                 setTokenUsage((prev) => {
                     if (!prev) return parsed.usageMetadata!;
@@ -47,12 +44,10 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
                 });
             }
 
-            // Handle function calls
             if (parsed.functionCall) {
-                handleFunctionCall(parsed.functionCall); // Pass entire object with id
+                handleFunctionCall(parsed.functionCall);
             }
 
-            // Call user-provided onMessage callback
             if (options?.onMessage) {
                 options.onMessage(parsed);
             }
@@ -143,9 +138,19 @@ export function useGeminiSession(options?: UseGeminiSessionOptions): UseGeminiSe
             sessionRef.current = session;
 
             // Send initial greeting trigger (text-based with turnComplete)
+            // This forces the model to respond immediately without waiting for user input
             if (!skipGreeting) {
                 session.sendClientContent({
-                    turns: [{role: 'user', parts: [{text: ''}]}],
+                    turns: [
+                        {
+                            role: 'user',
+                            parts: [
+                                {
+                                    text: 'When a customer first arrives (conversation starts with empty input), greet them with a short, sarcastic remark and immediately ask for their name. Keep greeting + name request under 30 words total (e.g., "Welcome to the Last Purr-over. What\'s your name, stranger?"). Don\'t keep to example be creative',
+                                },
+                            ],
+                        },
+                    ],
                     turnComplete: true,
                 });
             }

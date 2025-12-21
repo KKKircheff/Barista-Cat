@@ -1,4 +1,4 @@
-import {GoogleGenAI, Modality} from '@google/genai';
+import {GoogleGenAI} from '@google/genai';
 import {NextRequest, NextResponse} from 'next/server';
 import {getSystemInstructionWithContext} from '@/lib/system-instruction/format';
 
@@ -34,20 +34,24 @@ export async function POST(_request: NextRequest) {
                             parts: [{text: getSystemInstructionWithContext()}],
                         },
                         responseModalities: ['AUDIO'] as any,
-                        // realtimeInputConfig: {
-                        //     automaticActivityDetection: {
-                        //         disabled: false,
-                        //         startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH' as any,
-                        //         // prefixPaddingMs: 100,
-                        //         silenceDurationMs: 200,
-                        //     },
-                        // },
+                        realtimeInputConfig: {
+                            automaticActivityDetection: {
+                                disabled: false,
+                                startOfSpeechSensitivity: 'START_SENSITIVITY_LOW' as any,
+                                // prefixPaddingMs: 100,
+                                silenceDurationMs: 200,
+                            },
+                        },
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
                                     voiceName: 'Iapetus',
                                 },
                             },
+                        },
+                        thinkingConfig: {
+                            includeThoughts: false,
+                            thinkingBudget: 0,
                         },
                         tools: [
                             {
@@ -60,12 +64,12 @@ export async function POST(_request: NextRequest) {
                                     {
                                         name: 'hide_menu',
                                         description:
-                                            'Hide the cocktails menu from view. Call this when user is done looking at the menu or conversation moves on.',
+                                            'Hide the cocktails menu from view. Call this when user is done looking at the menu, user ordered a drink or conversation moves on.',
                                     },
                                     {
                                         name: 'close_session',
                                         description:
-                                            "REQUIRED: Call this function immediately when the user says goodbye, bye, see you later, I'm done, or wants to leave. You MUST call this function before saying your farewell message. Do not just say goodbye - actually call this function.",
+                                            "CRITICAL: ONLY call this when user explicitly wants to LEAVE the café or END their visit. Valid triggers: 'goodbye', 'bye', 'see you', 'gotta go', 'I'm leaving', 'time to go'. DO NOT call when user finishes ordering or says 'I'm done ordering' - they may want more drinks. After orders, ask if they want more or are ready to leave.",
                                     },
                                 ],
                             },

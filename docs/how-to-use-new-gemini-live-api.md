@@ -8,16 +8,70 @@ The Gemini Live API enables real-time, bidirectional audio conversations with Ge
 
 ## Architecture
 
-### Client-Side Direct Connection (New Approach)
+### Client-Side Direct Connection with Ephemeral Tokens
 - **Direct WebSocket connection** from browser to Gemini Live API
-- API key fetched from backend endpoint (`/api/gemini/token`)
+- **Ephemeral token** fetched from backend endpoint (`/api/gemini/token`)
 - No server-side proxy - minimal latency for real-time audio
 - Session managed entirely by the `@google/genai` SDK in the browser
+- All configuration (model, system instructions, tools, speech config) is embedded in the ephemeral token
+
+### Key Architectural Difference: Token-Embedded Config
+
+**Old Approach (API Key)**:
+```typescript
+// Client receives raw API key
+const {token} = await fetch('/api/gemini/token')
+const ai = new GoogleGenAI({apiKey: token})
+
+// Client sends configuration
+const session = await ai.live.connect({
+  model: 'gemini-2.5-flash...',
+  config: {
+    systemInstruction: {...},  // ❌ Sent from client
+    responseModalities: [...],
+    speechConfig: {...},
+    tools: [...]
+  }
+})
+```
+
+**New Approach (Ephemeral Token)**:
+```typescript
+// Server creates token with embedded config
+const tokenResponse = await client.authTokens.create({
+  config: {
+    liveConnectConstraints: {
+      model: 'gemini-2.5-flash...',
+      config: {
+        systemInstruction: {...},  // ✅ Embedded server-side
+        responseModalities: [...],
+        tools: [...]
+      }
+    }
+  }
+})
+
+// Client receives ephemeral token and connects with minimal config
+const {token} = await fetch('/api/gemini/token')
+const ai = new GoogleGenAI({apiKey: token, httpOptions: {apiVersion: 'v1alpha'}})
+const session = await ai.live.connect({
+  model: GEMINI_MODELS.LIVE_FLASH_NATIVE
+  // NO config object - everything is in the token!
+})
+```
+
+**Benefits**:
+- ✅ More secure - sensitive config never leaves server
+- ✅ Simpler client code - no config duplication
+- ✅ Easier to maintain - config in one place
+- ✅ True ephemeral tokens - single-use, time-limited
 
 ### Security
 - API key stored server-side in environment variables
-- Token endpoint returns API key to authenticated clients only
-- Sessions expire after 3 minutes (enforced by Gemini)
+- Token endpoint creates and returns **ephemeral token** (not raw API key)
+- Ephemeral tokens expire after 30 minutes (token lifetime)
+- New sessions must be created within 60 seconds of token generation
+- Tokens are single-use (uses: 1)
 
 ### Audio Pipeline
 - **Capture**: 16kHz PCM mono from microphone
@@ -33,15 +87,18 @@ The Gemini Live API enables real-time, bidirectional audio conversations with Ge
 **Iapetus** - Conversational, clear voice suitable for the barista character
 
 ### Response Settings
-- **Response modalities**: `[Modality.AUDIO]` - Audio-only responses
-- **System instruction**: Whiskerjack character personality
+- **Response modalities**: `['AUDIO']` - Audio-only responses
+- **System instruction**: Whiskerjack character personality (see `lib/system-instruction/format.ts`)
   - "You are 'Whiskerjack', a post-apocalyptic barista cat"
   - "Be sarcastic but charming"
-  - "Keep responses under 20 words"
-  - Initial greeting with max 10 words when conversation starts
+  - "Keep responses under 30 words"
+  - Initial greeting with max 30 words when conversation starts
+  - Custom greeting triggered by client after connection
 
 ### Audio Settings
-- **Input**: 16kHz PCM mono, echo cancellation, noise suppression
+- **Input**: 16kHz PCM mono, automatic activity detection enabled
+  - Start-of-speech sensitivity: `START_SENSITIVITY_LOW`
+  - Silence duration: 200ms
 - **Output**: 24kHz PCM, pre-buffering for smooth playback
 - **Transmission**: Real-time chunks sent via `sendRealtimeInput()`
 
@@ -67,11 +124,12 @@ The app uses three tool functions to control UI and session behavior:
 **Purpose**: Hide the menu from view
 
 **Description**:
-"Hide the cocktails menu from view. Call this when user is done looking at the menu or conversation moves on."
+"Hide the cocktails menu from view. Call this when user is done looking at the menu, user ordered a drink or conversation moves on."
 
 **Trigger phrases:**
 - "That's enough"
 - "Hide the menu"
+- User ordered a drink
 - User moves on to ordering
 
 **Response**: UI hides the menu card
@@ -80,21 +138,28 @@ The app uses three tool functions to control UI and session behavior:
 **Purpose**: End the conversation gracefully
 
 **Description**:
-"End the conversation and close the session. Call this when the user/customer says goodbye, indicates they want to leave, or says they are done ordering."
+"CRITICAL: ONLY call this when user explicitly wants to LEAVE the café or END their visit. Valid triggers: 'goodbye', 'bye', 'see you', 'gotta go', 'I'm leaving', 'time to go'. DO NOT call when user finishes ordering or says 'I'm done ordering' - they may want more drinks. After orders, ask if they want more or are ready to leave."
 
 **Trigger phrases:**
 - "Goodbye"
 - "Bye"
-- "I'm done"
-- "See you later"
-- "Thanks, that's all"
+- "See you"
+- "Gotta go"
+- "I'm leaving"
+- "Time to go"
+
+**IMPORTANT - Do NOT trigger on:**
+- "I'm done ordering"
+- "That's all" (for the order)
+- User finishes placing an order
 
 **Response**:
-1. Barista finishes their farewell message (waits for `turnComplete`)
-2. Session disconnects
-3. UI resets to "Go to bar" button
+1. UI shows "Saying goodbye..." button
+2. Barista finishes their farewell message (6-second delay)
+3. Session disconnects automatically
+4. UI resets to "Go to bar" button
 
-**Important**: The session waits for the model's turn to complete before disconnecting, allowing the barista to finish their goodbye message.
+**Important**: The UI waits 6 seconds after receiving the close_session function call to allow the barista to finish speaking before disconnecting.
 
 ### Function Call Flow
 
@@ -132,32 +197,51 @@ The app uses three tool functions to control UI and session behavior:
 
 ### Creating a Session
 
-1. **User clicks "Go to bar"**
+1. **Page loads or user clicks "Go to bar"**
    ```typescript
-   await geminiSession.connect()
+   await geminiSession.connect(skipGreeting)
    ```
 
-2. **Fetch API key from backend**
+2. **Fetch ephemeral token from backend**
    ```typescript
    const response = await fetch('/api/gemini/token', {method: 'POST'})
-   const {token} = await response.json()
+   const {token, expiresAt} = await response.json()
    ```
-
-3. **Initialize GoogleGenAI SDK**
+   Backend creates ephemeral token with full configuration embedded:
    ```typescript
-   const ai = new GoogleGenAI({apiKey: token})
+   const tokenResponse = await client.authTokens.create({
+     config: {
+       uses: 1,
+       expireTime: expireTimeISO,  // 30 minutes from now
+       newSessionExpireTime: newSessionExpireISO,  // 60 seconds from now
+       liveConnectConstraints: {
+         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+         config: {
+           systemInstruction: {...},
+           responseModalities: ['AUDIO'],
+           realtimeInputConfig: {...},
+           speechConfig: {...},
+           tools: [...]
+         }
+       },
+       httpOptions: {apiVersion: 'v1alpha'}  // REQUIRED
+     }
+   })
    ```
 
-4. **Connect to Gemini Live WebSocket**
+3. **Initialize GoogleGenAI SDK with ephemeral token**
+   ```typescript
+   const ai = new GoogleGenAI({
+     apiKey: token,  // Ephemeral token
+     httpOptions: {apiVersion: 'v1alpha'}  // REQUIRED
+   })
+   ```
+
+4. **Connect to Gemini Live WebSocket with minimal config**
    ```typescript
    const session = await ai.live.connect({
-     model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-     config: {
-       responseModalities: [Modality.AUDIO],
-       systemInstruction: {...},
-       speechConfig: {...},
-       tools: [...]
-     },
+     model: GEMINI_MODELS.LIVE_FLASH_NATIVE,
+     // NO config - everything is in the ephemeral token!
      callbacks: {
        onopen: () => {...},
        onmessage: (msg) => {...},
@@ -167,9 +251,43 @@ The app uses three tool functions to control UI and session behavior:
    })
    ```
 
-5. **Auto-start microphone**
+5. **Initialize audio and start microphone**
+   - AudioContext initialized
    - Recording begins automatically after connection
    - User can speak immediately
+
+6. **Send custom greeting trigger**
+   ```typescript
+   session.sendClientContent({
+     turns: [{
+       role: 'user',
+       parts: [{text: 'When a customer first arrives...'}]
+     }],
+     turnComplete: true
+   })
+   ```
+
+### Custom Greeting Mechanism
+
+The app uses a custom greeting mechanism to trigger the barista's initial message:
+
+1. **Connection established** with `skipGreeting = true`
+2. **Client sends custom instruction** via `sendClientContent()`:
+   ```typescript
+   session.sendClientContent({
+     turns: [{
+       role: 'user',
+       parts: [{
+         text: 'When a customer first arrives (conversation starts with empty input), greet them with a short, sarcastic remark and immediately ask for their name. Keep greeting + name request under 30 words total (e.g., "Welcome to the Last Purr-over. What\'s your name, stranger?"). Don\'t keep to example be creative'
+       }]
+     }],
+     turnComplete: true
+   })
+   ```
+3. **Model responds** with a creative greeting following the instruction
+4. **User can respond immediately** as microphone is already recording
+
+This approach allows for dynamic, varied greetings while maintaining character consistency.
 
 ### Sending Audio
 
@@ -203,14 +321,22 @@ The app uses three tool functions to control UI and session behavior:
 
 **Manual close** (user clicks "Finish your order"):
 ```typescript
-session.close()
+handleDisconnect() {
+  audioCapture.stopRecording()
+  audioPlayback.stop()
+  geminiSession.disconnect()
+  setShowMenu(false)
+  setSessionEnded(true)
+}
 ```
 
 **Automatic close** (via `close_session` function):
-1. Function call received
-2. Set `shouldCloseAfterTurn = true`
-3. Wait for message with `turnComplete: true`
-4. Disconnect gracefully
+1. Function call received: `close_session`
+2. UI shows "Saying goodbye..." button
+3. Set `isClosing = true`
+4. Wait 6 seconds for barista to finish speaking
+5. Call `handleDisconnect()` to clean up all resources
+6. UI shows "Go to bar" button
 
 ## Message Structure
 
@@ -303,105 +429,125 @@ onclose: (event) => {
 
 ```
 app/api/gemini/
-└── token/route.ts          - Returns API key for client connection
+└── token/route.ts               - Creates ephemeral token with embedded config
 
 lib/
-├── gemini.ts               - Message parsing, session utilities
-├── types.ts                - TypeScript interfaces
+├── gemini-utils.ts              - Message parsing, session utilities
+├── types.ts                     - TypeScript interfaces
+├── system-instruction/
+│   └── format.ts                - System instruction with character personality
+├── context-data/
+│   └── barista-cat-recipes.ts   - Knowledge base (drinks menu)
 └── audio/
-    ├── capture.ts          - Microphone input (16kHz)
-    └── playback.ts         - Speaker output (24kHz)
+    ├── capture.ts               - Microphone input (16kHz)
+    └── playback.ts              - Speaker output (24kHz)
 
 hooks/
-├── use-gemini-session.ts   - WebSocket session management
-├── use-audio-capture.ts    - Microphone access
-├── use-audio-playback.ts   - Audio playback queue
-└── use-volume-level.ts     - Audio visualization
+├── use-gemini-session.ts        - WebSocket session management
+├── use-audio-capture.ts         - Microphone access
+├── use-audio-playback.ts        - Audio playback queue
+└── use-volume-level.ts          - Audio visualization
 
 components/voice-chat/
-├── voice-chat.tsx          - Main orchestrator
-├── barista-image.tsx       - Cat avatar with voice indicator
-├── menu-card.tsx           - Cocktails menu display
-├── volume-bar.tsx          - Audio level visualization
-├── error-alert.tsx         - Error messages
-└── token-usage-display.tsx - Token counter
+├── voice-chat.tsx               - Main orchestrator with auto-initialization
+├── barista-image.tsx            - Cat avatar with voice indicator
+├── menu-card.tsx                - Cocktails menu display
+├── volume-bar.tsx               - Audio level visualization
+├── error-alert.tsx              - Error messages
+└── token-usage-display.tsx      - Token counter
 ```
 
 ## Best Practices
 
-### 1. Direct WebSocket Connection
-✅ **Do**: Use client-side SDK for minimal latency
-❌ **Don't**: Create server-side proxy unless necessary for security
+### 1. Ephemeral Token Architecture
+✅ **Do**: Use ephemeral tokens with embedded configuration
+✅ **Do**: Create tokens server-side with full `liveConnectConstraints`
+✅ **Do**: Use `httpOptions: {apiVersion: 'v1alpha'}` on both client and server
+❌ **Don't**: Send configuration in both token AND connect() call
+❌ **Don't**: Expose raw API key to client
 
 ### 2. Function Call ID Matching
 ✅ **Do**: Always include matching `id` in function responses
 ❌ **Don't**: Send responses without the original call ID
 
-### 3. Turn Completion
-✅ **Do**: Wait for `turnComplete` before disruptive actions
-❌ **Don't**: Disconnect mid-sentence
+### 3. Session Timing
+✅ **Do**: Allow sufficient time for barista to finish speaking (6 seconds)
+✅ **Do**: Use auto-initialization for faster first connection
+❌ **Don't**: Disconnect immediately after close_session function call
 
 ### 4. Audio Buffer Management
 ✅ **Do**: Pre-buffer audio for smooth playback
+✅ **Do**: Initialize AudioContext before starting session
 ❌ **Don't**: Play chunks individually without queuing
 
-### 5. API Key Security
-✅ **Do**: Store API key server-side only
-❌ **Don't**: Expose API key in client code
+### 5. Token Lifecycle
+✅ **Do**: Set reasonable expiration times (30 min token, 60 sec new session)
+✅ **Do**: Use single-use tokens (uses: 1)
+❌ **Don't**: Reuse ephemeral tokens across sessions
 
 ### 6. System Instructions
-✅ **Do**: Keep character instructions concise and clear
-❌ **Don't**: Over-specify behavior (let the model be creative)
+✅ **Do**: Embed system instructions in the ephemeral token
+✅ **Do**: Keep character instructions concise but specific (under 30 words)
+❌ **Don't**: Send system instructions in client connection config
 
 ## Testing
 
 ### Manual Testing Flow
 
-1. **Start conversation**
-   - Click "Go to bar"
-   - Verify connection logs appear
-   - Wait for initial greeting
+1. **Start conversation** (Auto-initialization)
+   - Page loads with "Preparing session..." button
+   - Wait for auto-initialization to complete
+   - Verify initial greeting plays automatically
+   - Verify "Finish your order" button appears
 
 2. **Test function calls**
    - Say "What drinks do you have?"
-   - Verify menu appears
+   - Verify menu appears on the right side
    - Verify console shows function call flow
+   - Say "Hide the menu" and verify it disappears
 
 3. **Test audio**
    - Speak a request
-   - Verify volume bar shows input
-   - Verify audio response plays
+   - Verify volume bar shows input level
+   - Verify audio response plays through speakers
+   - Verify barista image shows voice indicator when speaking
 
 4. **Test close**
    - Say "Goodbye"
-   - Verify barista finishes message
-   - Verify session disconnects cleanly
+   - Verify "Saying goodbye..." button appears
+   - Verify barista finishes farewell message
+   - Wait 6 seconds and verify session disconnects
+   - Verify "Go to bar" button appears
+
+5. **Test restart**
+   - Click "Go to bar" again
+   - Verify new session starts without page reload
+   - Verify new greeting plays
 
 ### Expected Console Logs
 
-**Connection:**
+**Auto-initialization:**
 ```
-[useGeminiSession] Requesting API key...
-[useGeminiSession] API key received
-[useGeminiSession] Connecting to Gemini Live API...
-[useGeminiSession] WebSocket connected
-[VoiceChat] Connected and recording started
+[VoiceChat] Auto-initializing on page load...
+[useGeminiSession] Connecting to Gemini Live with ephemeral token...
+[useGeminiSession] Connected
+[VoiceChat] ✓ Gemini session connected
+[VoiceChat] ✓ AudioContext initialized
+[VoiceChat] ✓ Microphone started
+[VoiceChat] ✓ Greeting sent
+[VoiceChat] Full initialization complete in 2143ms
 ```
 
 **Function Call:**
 ```
-[useGeminiSession] RAW MESSAGE WITH FUNCTION CALL: {...}
-[parseLiveServerMessage] Found toolCall.functionCalls: [...]
-[parseLiveServerMessage] Checking function call: show_menu
-[parseLiveServerMessage] ✅ Function call extracted: {id: "...", name: "show_menu", args: {}}
-[useGeminiSession] 🎯 Calling handleFunctionCall with: {...}
-[useGeminiSession] Function call: {id: "...", name: "show_menu", args: {}}
-[VoiceChat] Function call received: show_menu {}
+[VoiceChat] Function called: show_menu
 ```
 
-**Turn Complete:**
+**Close Session:**
 ```
-[useGeminiSession] Parsed message: {hasText: false, hasAudio: true, hasFunctionCall: false, turnComplete: true}
+[VoiceChat] Function called: close_session
+[VoiceChat] close_session called - this should only happen on goodbye!
+[useGeminiSession] WebSocket closed: {code: 1000, reason: "", wasClean: true}
 ```
 
 ## Troubleshooting
@@ -449,21 +595,31 @@ components/voice-chat/
 ## API Reference
 
 ### POST /api/gemini/token
-Returns API key for client-side connection.
+Creates and returns ephemeral token with embedded configuration.
 
 **Request**: `POST /api/gemini/token`
 **Response**:
 ```json
 {
-  "token": "your-api-key",
-  "expiresAt": "2025-12-20T14:00:00.000Z"
+  "token": "ephemeral-token-string",
+  "expiresAt": "2025-12-20T14:30:00.000Z"
 }
 ```
 
+**Configuration embedded in token**:
+- Model: `gemini-2.5-flash-native-audio-preview-12-2025`
+- System instruction from `lib/system-instruction/format.ts`
+- Response modalities: `['AUDIO']`
+- Speech config: Voice "Iapetus"
+- Realtime input config: Automatic activity detection
+- Tools: `show_menu`, `hide_menu`, `close_session`
+
 **Notes**:
-- Token is the actual API key (not an ephemeral token)
-- Future versions will use true ephemeral tokens when SDK supports it
-- Expires in 3 minutes
+- Token is an actual ephemeral token (not raw API key)
+- Expires in 30 minutes (token lifetime)
+- New sessions must be created within 60 seconds
+- Single-use token (uses: 1)
+- Requires `httpOptions: {apiVersion: 'v1alpha'}` in SDK initialization
 
 ### session.sendRealtimeInput()
 Send audio chunk to Gemini.
@@ -511,24 +667,30 @@ session.close()
 
 ## Changelog
 
-### December 2025 - Direct Client Connection
+### December 2025 - Ephemeral Token Implementation
 - ✅ Migrated from server-side proxy to direct client WebSocket
-- ✅ Implemented ephemeral token architecture (API key endpoint)
+- ✅ Implemented true ephemeral token architecture with `client.authTokens.create()`
+- ✅ Embedded all configuration in ephemeral token (`liveConnectConstraints`)
 - ✅ Fixed function calling with proper ID matching
-- ✅ Added `close_session` tool with graceful disconnect
-- ✅ Improved turn completion handling
+- ✅ Added `close_session` tool with 6-second graceful disconnect
+- ✅ Implemented auto-initialization on page load
+- ✅ Updated system instructions to prevent premature session closure
+- ✅ Added automatic activity detection for speech input
 - ✅ Enhanced debug logging for troubleshooting
 - ✅ Removed server-side session management code
-- ✅ Updated to `@google/genai` v1.34.0
+- ✅ Updated to `@google/genai` latest version with v1alpha support
 - ✅ Fixed TypeScript errors in Live API integration
-- ✅ Implemented delayed disconnect to allow barista to finish speaking
+- ✅ Renamed `lib/gemini.ts` to `lib/gemini-utils.ts`
 
 ### Key Improvements
+- **True ephemeral tokens**: Secure, single-use tokens with embedded configuration
 - **Reduced latency**: Direct WebSocket eliminates server proxy overhead
+- **Better UX**: Auto-initialization provides instant greeting on page load
 - **Better function calling**: Proper ID matching ensures reliable tool execution
-- **Graceful closing**: Barista can finish goodbye before disconnect
-- **Improved debugging**: Comprehensive console logging for development
+- **Graceful closing**: 6-second delay allows barista to finish goodbye message
+- **Improved debugging**: Simplified console logging for development
 - **Type safety**: Full TypeScript support with SDK types
+- **Configuration security**: All sensitive config embedded server-side in token
 
 ## Resources
 

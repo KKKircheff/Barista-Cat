@@ -1,7 +1,7 @@
 // Pre-buffering configuration
-const PRE_BUFFER_COUNT = 4; // Wait for 10 chunks before starting playback (~400ms safety buffer)
-const REBUFFER_THRESHOLD = 3; // Re-buffer if queue drops below this during playback
-const LOW_BUFFER_THRESHOLD = 2; // Warn when queue drops to 5 chunks
+const PRE_BUFFER_COUNT = 2; // Wait for 10 chunks before starting playback (~400ms safety buffer)
+const REBUFFER_THRESHOLD = 2; // Re-buffer if queue drops below this during playback
+const LOW_BUFFER_THRESHOLD = 1; // Warn when queue drops to 5 chunks
 const SCHEDULE_AHEAD_COUNT = 2; // Always keep 3 chunks scheduled ahead
 
 export function base64ToUint8Array(base64: string): Uint8Array {
@@ -168,13 +168,13 @@ export function createAudioPlayer(sampleRate: number = 24000) {
         source.start(startTime);
 
         // Log for debugging (can be removed in production)
-        console.log(
-            `[Audio] Playing chunk: duration=${buffer.duration.toFixed(3)}s, queue=${
-                audioQueue.length
-            }, scheduled=${startTime.toFixed(3)}s, scheduledAhead=${scheduledChunks}, health=${
-                audioQueue.length <= LOW_BUFFER_THRESHOLD ? 'LOW' : 'OK'
-            }`
-        );
+        // console.log(
+        //     `[Audio] Playing chunk: duration=${buffer.duration.toFixed(3)}s, queue=${
+        //         audioQueue.length
+        //     }, scheduled=${startTime.toFixed(3)}s, scheduledAhead=${scheduledChunks}, health=${
+        //         audioQueue.length <= LOW_BUFFER_THRESHOLD ? 'LOW' : 'OK'
+        //     }`
+        // );
 
         // Schedule more chunks to stay ahead (prevents gaps from onended latency)
         // This schedules up to SCHEDULE_AHEAD_COUNT chunks with precise timing
