@@ -1,10 +1,12 @@
-# Barista Cat - Gemini Live API Voice Chat Demo
+# Barista Cat - Gemini Live API Voice Chat Demo 
 
 Educational project demonstrating real-time voice conversations using Google's Gemini Live API with ephemeral tokens.
 
 ## What This Is
 
 A Next.js voice chat application featuring Whiskerjack, a post-apocalyptic barista cat powered by Gemini 2.5 Flash. Users have natural voice conversations to order drinks from a themed menu.
+
+## Deployed on vercel
 
 ## Key Features
 
@@ -286,3 +288,4 @@ Built with:
 - Next.js
 - Shadcn UI
 - Tailwind CSS
+
