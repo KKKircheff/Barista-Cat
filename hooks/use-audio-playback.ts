@@ -4,6 +4,7 @@ import { createAudioPlayer } from '@/lib/audio/playback';
 interface UseAudioPlaybackReturn {
   play: (base64Audio: string) => Promise<void>;
   stop: () => void;
+  emergencyStop: () => void; // For interruption handling
   initialize: () => Promise<void>;
   isPlayingAudio: boolean; // Renamed from isPlaying for clarity
 }
@@ -54,6 +55,12 @@ export function useAudioPlayback(sampleRate: number = 24000): UseAudioPlaybackRe
     }
   };
 
+  const emergencyStop = (): void => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.emergencyStop();
+    }
+  };
+
   const initialize = async (): Promise<void> => {
     if (!audioPlayerRef.current) {
       throw new Error('Audio player not initialized');
@@ -71,6 +78,7 @@ export function useAudioPlayback(sampleRate: number = 24000): UseAudioPlaybackRe
   return {
     play,
     stop,
+    emergencyStop,
     initialize,
     isPlayingAudio,
   };

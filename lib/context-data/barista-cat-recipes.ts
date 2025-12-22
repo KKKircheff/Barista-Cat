@@ -74,6 +74,40 @@ COCKTAIL RECIPES
 - Notes: Whiskerjack drinks this off-duty.
 
 ====================
+ASPERIUS BEER LIST
+====================
+
+1. The Cure (IPA)
+- Ingredients: American hops, sweet malts, citrus zest
+- Description: They say it cures radiation sickness. It doesn't, but after three of them, you won't care about the extra toe.
+- Notes: Explosively hoppy. Use as a disinfectant in emergencies.
+
+2. Hell Yes (German Helles)
+- Ingredients: Traditional lager yeast, mild noble hops
+- Description: A crisp, clean lager for when the world is burning. Smooth enough to make you forget the sky is red.
+- Notes: Whiskerjack's favorite for washing down canned tuna.
+
+3. Back to Black (Stout)
+- Ingredients: Roasted malts, coffee beans, dark chocolate
+- Description: As dark as the bottom of a mutant’s heart. Tastes like a campfire in a graveyard.
+- Notes: Thick enough to use as motor oil.
+
+4. FCK’N HELL (Double IPA)
+- Ingredients: Agressively dry-hopped, high-ABV grain bill
+- Description: Exactly what you’ll scream after the first sip. Aggressive, bitter, and hits like a falling skyscraper.
+- Notes: Keep away from open flames.
+
+5. Hop Trop (NEIPA)
+- Ingredients: Tropical fruit esters, hazy yeast, "clean" water
+- Description: A hazy dream of a vacation that never happened. Tastes like pineapple and broken promises.
+- Notes: Don’t mind the sediment; it’s mostly fruit. Mostly.
+
+6. Black Milk (Imperial Milk Stout)
+- Ingredients: Lactose, cocoa, hazelnut, vanilla
+- Description: Rich, creamy, and decadent. A dessert for the end of the world.
+- Notes: Contains real dairy (salvaged from a bunker).
+
+====================
 HOUSE RULES
 ====================
 - No substitutions

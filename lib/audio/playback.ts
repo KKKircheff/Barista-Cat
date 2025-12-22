@@ -1,8 +1,9 @@
 // Pre-buffering configuration
-const PRE_BUFFER_COUNT = 2; // Wait for 10 chunks before starting playback (~400ms safety buffer)
+// Optimized for 40ms chunks (640 samples at 16kHz)
+const PRE_BUFFER_COUNT = 3; // Wait for 3 chunks before starting playback (~120ms safety buffer)
 const REBUFFER_THRESHOLD = 2; // Re-buffer if queue drops below this during playback
-const LOW_BUFFER_THRESHOLD = 1; // Warn when queue drops to 5 chunks
-const SCHEDULE_AHEAD_COUNT = 2; // Always keep 3 chunks scheduled ahead
+const LOW_BUFFER_THRESHOLD = 2; // Warn when queue drops to 2 chunks
+const SCHEDULE_AHEAD_COUNT = 4; // Always keep 4 chunks scheduled ahead for stability
 
 export function base64ToUint8Array(base64: string): Uint8Array {
     const binaryString = atob(base64);
@@ -262,6 +263,41 @@ export function createAudioPlayer(sampleRate: number = 24000) {
         }, 100);
     };
 
+    // Emergency stop for interruptions (user starts speaking during playback)
+    const emergencyStop = () => {
+        console.log('[Audio] Emergency stop - user interrupted');
+
+        // Immediately stop all active sources
+        for (const source of activeSources) {
+            try {
+                source.stop();
+                source.disconnect();
+            } catch (e) {
+                // Source may have already ended
+            }
+        }
+
+        // Clear everything
+        activeSources.length = 0;
+        currentSource = null;
+        audioQueue.length = 0;
+        scheduledChunks = 0;
+        isRebuffering = false;
+
+        // Don't reset hasStartedPlayback - we may resume playback after interruption
+
+        // Notify that playback stopped
+        if (isPlaying) {
+            isPlaying = false;
+            notifyPlaybackState(false);
+        }
+
+        // Reset scheduling
+        if (audioContext) {
+            nextScheduledTime = audioContext.currentTime;
+        }
+    };
+
     // Set volume (0-1)
     const setVolume = (volume: number) => {
         if (gainNode) {
@@ -287,6 +323,7 @@ export function createAudioPlayer(sampleRate: number = 24000) {
     return {
         play,
         stop,
+        emergencyStop, // NEW: For interruption handling
         setVolume,
         cleanup,
         initialize: init, // NEW: Expose init to trigger AudioContext creation with user gesture

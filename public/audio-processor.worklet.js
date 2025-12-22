@@ -18,7 +18,7 @@ class AudioCaptureProcessor extends AudioWorkletProcessor {
     // Resampling state
     this.resampleRatio = this.nativeSampleRate / this.targetSampleRate;
     this.inputBuffer = [];
-    this.outputBufferSize = 4096; // Process chunks of 4096 samples
+    this.outputBufferSize = 640; // Process chunks of 640 samples (~40ms at 16kHz for low latency)
 
     // Track if we need resampling
     this.needsResampling = this.nativeSampleRate !== this.targetSampleRate;

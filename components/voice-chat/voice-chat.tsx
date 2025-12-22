@@ -14,15 +14,6 @@ import { ErrorAlert } from './error-alert';
 import { MenuCard } from './menu-card';
 import { TokenUsageDisplay } from './token-usage-display';
 
-/**
- * Main VoiceChat orchestrator component.
- * Coordinates all custom hooks and child components for the voice chat experience.
- *
- * Auto-connect flow:
- * 1. Page loads → "Preparing session..." (auto-connect WebSocket + AudioContext + mic)
- * 2. Everything initialized → Bartender starts greeting
- * 3. User has time to respond before bartender finishes talking
- */
 export function VoiceChat() {
     const [showMenu, setShowMenu] = useState(false);
     const [isInitializing, setIsInitializing] = useState(true); // Start in initializing state
@@ -34,6 +25,24 @@ export function VoiceChat() {
     const audioPlayback = useAudioPlayback(24000);
     const audioCapture = useAudioCapture();
     const volumeLevel = useVolumeLevel(audioCapture.analyser, audioCapture.isRecording);
+
+    // Interruption detection: user speaking while bartender is talking
+    const INTERRUPTION_VOLUME_THRESHOLD = 15; // Volume level above which we consider user is speaking
+    useEffect(() => {
+        // Only check for interruptions during active sessions
+        if (!audioCapture.isRecording || sessionEnded || isClosing) {
+            return;
+        }
+
+        // User is speaking if volume is above threshold
+        const isUserSpeaking = volumeLevel.volumeLevel > INTERRUPTION_VOLUME_THRESHOLD;
+
+        // If both user and bartender are speaking, interrupt the bartender
+        if (isUserSpeaking && audioPlayback.isPlayingAudio) {
+            console.log('[VoiceChat] Interruption detected - stopping bartender audio');
+            audioPlayback.emergencyStop();
+        }
+    }, [volumeLevel.volumeLevel, audioPlayback.isPlayingAudio, audioCapture.isRecording, sessionEnded, isClosing]);
 
     const geminiSession = useGeminiSession({
         onMessage: (message) => {

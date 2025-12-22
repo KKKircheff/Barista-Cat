@@ -34,6 +34,11 @@ export async function POST(_request: NextRequest) {
                             parts: [{text: getSystemInstructionWithContext()}],
                         },
                         responseModalities: ['AUDIO'] as any,
+                        // contextWindowCompression: {
+                        //     slidingWindow: {
+                        //         targetTokens: '15000',
+                        //     },
+                        // },
                         realtimeInputConfig: {
                             automaticActivityDetection: {
                                 disabled: false,
