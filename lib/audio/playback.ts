@@ -1,9 +1,9 @@
 // Pre-buffering configuration
 // Optimized for 40ms chunks (640 samples at 16kHz)
-const PRE_BUFFER_COUNT = 3; // Wait for 3 chunks before starting playback (~120ms safety buffer)
+const PRE_BUFFER_COUNT = 2; // Wait for 2 chunks before starting playback (~80ms for lower latency)
 const REBUFFER_THRESHOLD = 2; // Re-buffer if queue drops below this during playback
 const LOW_BUFFER_THRESHOLD = 2; // Warn when queue drops to 2 chunks
-const SCHEDULE_AHEAD_COUNT = 4; // Always keep 4 chunks scheduled ahead for stability
+const SCHEDULE_AHEAD_COUNT = 3; // Schedule 3 chunks ahead to prevent gaps while reducing latency
 
 export function base64ToUint8Array(base64: string): Uint8Array {
     const binaryString = atob(base64);

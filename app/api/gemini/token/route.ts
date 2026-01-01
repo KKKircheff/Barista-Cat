@@ -42,8 +42,8 @@ export async function POST(_request: NextRequest) {
                         realtimeInputConfig: {
                             automaticActivityDetection: {
                                 disabled: false,
-                                startOfSpeechSensitivity: 'START_SENSITIVITY_LOW' as any,
-                                // prefixPaddingMs: 100,
+                                startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH' as any,
+                                prefixPaddingMs: 100, // Capture 100ms before speech detection to avoid cutting off starts
                                 silenceDurationMs: 200,
                             },
                         },

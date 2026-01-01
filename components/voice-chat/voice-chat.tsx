@@ -27,14 +27,14 @@ export function VoiceChat() {
     const volumeLevel = useVolumeLevel(audioCapture.analyser, audioCapture.isRecording);
 
     // Interruption detection: user speaking while bartender is talking
-    const INTERRUPTION_VOLUME_THRESHOLD = 15; // Volume level above which we consider user is speaking
+    const INTERRUPTION_VOLUME_THRESHOLD = 22; // Volume level above which we consider user is speaking (raised from 15 to reduce false positives)
     useEffect(() => {
         // Only check for interruptions during active sessions
         if (!audioCapture.isRecording || sessionEnded || isClosing) {
             return;
         }
 
-        // User is speaking if volume is above threshold
+        // User is speaking if volume is above threshold (server-side VAD handles speech detection)
         const isUserSpeaking = volumeLevel.volumeLevel > INTERRUPTION_VOLUME_THRESHOLD;
 
         // If both user and bartender are speaking, interrupt the bartender
@@ -73,6 +73,7 @@ export function VoiceChat() {
         },
     });
 
+
     // Auto-initialize everything on page load (only runs once)
     useEffect(() => {
         const autoInitialize = async () => {
@@ -91,8 +92,10 @@ export function VoiceChat() {
                     await audioPlayback.initialize();
                     console.log('[VoiceChat] ✓ AudioContext initialized');
 
-                    // Step 3: Start microphone recording
-                    await audioCapture.startRecording(geminiSession.sendAudio);
+                    // Step 3: Start microphone recording (direct audio stream to Gemini)
+                    await audioCapture.startRecording((base64Audio) => {
+                        geminiSession.sendAudio(base64Audio);
+                    });
                     console.log('[VoiceChat] ✓ Microphone started');
 
                     // Step 4: Send greeting to trigger bartender
@@ -148,8 +151,10 @@ export function VoiceChat() {
             await audioPlayback.initialize();
             console.log('[VoiceChat] ✓ AudioContext initialized');
 
-            // Step 3: Start microphone recording
-            await audioCapture.startRecording(geminiSession.sendAudio);
+            // Step 3: Start microphone recording (direct audio stream to Gemini)
+            await audioCapture.startRecording((base64Audio) => {
+                geminiSession.sendAudio(base64Audio);
+            });
             console.log('[VoiceChat] ✓ Microphone started');
 
             // Step 4: Send greeting to trigger bartender
@@ -164,7 +169,6 @@ export function VoiceChat() {
         }
     };
 
-    // Combine errors from both session and capture
     const error = geminiSession.error || audioCapture.error;
 
     return (
@@ -218,7 +222,6 @@ export function VoiceChat() {
                 </div>
             )}
 
-            {/* Volume visualization during recording */}
             <VolumeBar level={volumeLevel.volumeLevel} show={audioCapture.isRecording} />
 
             {/* Error display */}
